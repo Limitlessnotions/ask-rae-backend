@@ -1,0 +1,33 @@
+import crypto from "crypto";
+
+/**
+ * Base64 URL encode
+ */
+function base64UrlEncode(buffer) {
+  return buffer
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+}
+
+/**
+ * Generate PKCE verifier & challenge
+ */
+export function generatePKCE() {
+  const codeVerifier = base64UrlEncode(
+    crypto.randomBytes(64)
+  );
+
+  const codeChallenge = base64UrlEncode(
+    crypto
+      .createHash("sha256")
+      .update(codeVerifier)
+      .digest()
+  );
+
+  return {
+    codeVerifier,
+    codeChallenge,
+  };
+}

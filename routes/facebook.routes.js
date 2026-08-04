@@ -19,4 +19,5 @@ router.get("/facebook", verifyUser, loginWithFacebook);
  */
 router.get("/facebook/callback", facebookCallback);
 
+
 export default router;

@@ -1,43 +1,45 @@
-import { auth, db } from "../firebase/firebaseAdmin.js";
+import { auth } from "../firebase/firebaseAdmin.js";
 
-export const verifyUser = async (req, res, next) => {
+/**
+ * Verify Firebase Authentication
+ */
+export async function verifyUser(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
+    const authorization = req.headers.authorization;
 
-    if (!authHeader?.startsWith("Bearer ")) {
+    if (!authorization) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized",
+        message: "Authorization header missing.",
       });
     }
 
-    const token = authHeader.split("Bearer ")[1];
-
-    const decodedToken = await auth.verifyIdToken(token);
-
-    const uid = decodedToken.uid;
-
-    const userDoc = await db.collection("users").doc(uid).get();
-
-    if (!userDoc.exists) {
-      return res.status(404).json({
+    if (!authorization.startsWith("Bearer ")) {
+      return res.status(401).json({
         success: false,
-        message: "User not found",
+        message: "Invalid authorization format.",
       });
     }
+
+    const idToken = authorization.split("Bearer ")[1];
+
+    const decodedToken =
+      await auth.verifyIdToken(idToken);
 
     req.user = {
-      uid,
-      profile: userDoc.data(),
+      uid: decodedToken.uid,
+      email: decodedToken.email,
+      name: decodedToken.name,
     };
 
     next();
+
   } catch (error) {
-    console.error(error);
+    console.error("Firebase Auth Error:", error);
 
     return res.status(401).json({
       success: false,
-      message: "Invalid authentication token",
+      message: "Invalid authentication token.",
     });
   }
-};
+}
