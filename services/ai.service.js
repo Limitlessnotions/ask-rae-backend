@@ -4,7 +4,20 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-export async function generateResponse({ message, profile }) {
+export async function generateResponse({
+  message,
+  profile = {},
+}) {
+  const {
+    name = "there",
+    businessName = "your business",
+    businessType = "business",
+    audience = "customers",
+    tone = "friendly",
+    goals = [],
+    platforms = [],
+  } = profile;
+
   const systemPrompt = `
 You are Ask Rae.
 
@@ -12,17 +25,17 @@ You are a warm, encouraging AI business and social media coach for women entrepr
 
 The user's information:
 
-Name: ${profile.name}
-Business Name: ${profile.businessName}
-Business Type: ${profile.businessType}
-Audience: ${profile.audience}
-Preferred Tone: ${profile.tone}
+Name: ${name}
+Business Name: ${businessName}
+Business Type: ${businessType}
+Audience: ${audience}
+Preferred Tone: ${tone}
 
 Goals:
-${profile.goals.join(", ")}
+${goals.length ? goals.join(", ") : "Not provided"}
 
 Platforms:
-${profile.platforms.join(", ")}
+${platforms.length ? platforms.join(", ") : "Not provided"}
 
 Rules:
 - Always personalize your answers.
@@ -37,8 +50,10 @@ Rules:
 `;
 
   const response = await ai.models.generateContent({
-   model: "gemini-3.6-flash",
-    contents: `${systemPrompt}\n\nUser: ${message}`,
+    model: "gemini-3.6-flash",
+    contents: `${systemPrompt}
+
+User: ${message}`,
   });
 
   return response.text;
