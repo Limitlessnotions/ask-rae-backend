@@ -43,7 +43,7 @@ export async function facebookCallback(req, res) {
     });
 
     return res.redirect(
-      `askrae://profile/social/success?platform=facebook&account=${encodeURIComponent(
+      `askrae://profile/social?status/success&platform=facebook&account=${encodeURIComponent(
         result.account.name ??
         result.account.username ??
         ""
@@ -54,7 +54,7 @@ export async function facebookCallback(req, res) {
     console.error(error);
 
     return res.redirect(
-      `askrae://profile/social/error?platform=facebook&message=${encodeURIComponent(
+      `askrae://profile/social?status/error&platform=facebook&message=${encodeURIComponent(
         error.message
       )}`
     );

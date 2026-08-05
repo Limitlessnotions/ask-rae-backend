@@ -43,7 +43,7 @@ export async function tiktokCallback(req, res) {
     });
 
     return res.redirect(
-      `askrae://profile/social/success?platform=tiktok&account=${encodeURIComponent(
+      `askrae://profile/social?status/success&platform=tiktok&account=${encodeURIComponent(
         result.account.username ??
         result.account.displayName ??
         ""
@@ -55,7 +55,7 @@ export async function tiktokCallback(req, res) {
     console.error(error);
 
     return res.redirect(
-      `askrae://profile/social/error?platform=tiktok&message=${encodeURIComponent(
+      `askrae://profile/social?status/error&platform=tiktok&message=${encodeURIComponent(
         error.message
       )}`
     );
