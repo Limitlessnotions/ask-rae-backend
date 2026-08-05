@@ -43,7 +43,7 @@ export async function xCallback(req, res) {
     });
 
     return res.redirect(
-      `askrae://oauth/success?platform=x&account=${encodeURIComponent(
+      `askrae://profile/social/success?platform=x&account=${encodeURIComponent(
         result.account.username ??
         result.account.displayName ??
         ""
@@ -55,7 +55,7 @@ export async function xCallback(req, res) {
     console.error(error);
 
     return res.redirect(
-      `askrae://oauth/error?platform=x&message=${encodeURIComponent(
+      `askrae://profile/social/error?platform=x&message=${encodeURIComponent(
         error.message
       )}`
     );
