@@ -229,11 +229,56 @@ export const publishSocialContent = async (req, res) => {
           createdAt: new Date(),
         });
 
-    } catch (logError) {
-      console.error(
-        "Failed to log publish error:",
-        logError
-      );
+    } catch (error) {
+  console.log("==========================================");
+  console.log("FACEBOOK PUBLISH ERROR");
+  console.log("==========================================");
+
+  console.log("Message:");
+  console.log(error.message);
+
+  console.log("Status:");
+  console.log(error.response?.status);
+
+  console.log("Facebook Response:");
+  console.dir(error.response?.data, {
+    depth: null,
+  });
+
+  console.log("Stack:");
+  console.log(error.stack);
+
+  console.log("==========================================");
+
+  try {
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("publishedContent")
+      .add({
+        platform: req.body.platform ?? null,
+        targetId: req.body.targetId ?? null,
+        type: req.body.content?.type ?? null,
+        content: req.body.content ?? null,
+        status: "failed",
+        error: error.message,
+        createdAt: new Date(),
+      });
+
+  } catch (logError) {
+    console.error(
+      "Failed to log publish error:",
+      logError
+    );
+  }
+
+  return res.status(500).json({
+    success: false,
+    message:
+      error.response?.data?.error?.message ||
+      error.message,
+  });
+
     }
 
     return res.status(500).json({

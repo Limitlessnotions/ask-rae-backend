@@ -195,7 +195,6 @@ export async function publishVideo(
 
   return response.data;
 }
-
 /**
  * Universal Facebook Publisher
  */
@@ -205,27 +204,39 @@ export async function publishFacebookContent({
   content,
 }) {
   switch (content.type) {
-    case "text":
-      return publishPagePost(
+    case "text": {
+      const message =
+        content.text ??
+        content.message ??
+        "";
+
+      if (!message.trim()) {
+        throw new Error(
+          "Facebook text content is empty."
+        );
+      }
+
+      return await publishPagePost(
         accessToken,
         pageId,
-        content.message
+        message
       );
+    }
 
     case "photo":
-      return publishPhoto(
+      return await publishPhoto(
         accessToken,
         pageId,
         content.imageUrl,
-        content.caption || ""
+        content.caption ?? content.text ?? ""
       );
 
     case "video":
-      return publishVideo(
+      return await publishVideo(
         accessToken,
         pageId,
         content.videoUrl,
-        content.description || ""
+        content.description ?? content.text ?? ""
       );
 
     default:
