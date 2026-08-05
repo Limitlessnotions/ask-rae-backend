@@ -4,7 +4,9 @@ import {
 } from "../services/oauth/oauth.service.js";
 
 /**
+ * --------------------------------------------------------------------------
  * Start TikTok OAuth
+ * --------------------------------------------------------------------------
  */
 export async function loginWithTikTok(req, res) {
   try {
@@ -13,7 +15,10 @@ export async function loginWithTikTok(req, res) {
       platform: "tiktok",
     });
 
-    return res.redirect(result.authorizationUrl);
+    return res.json({
+      success: true,
+      authorizationUrl: result.authorizationUrl,
+    });
 
   } catch (error) {
     console.error(error);
@@ -26,22 +31,24 @@ export async function loginWithTikTok(req, res) {
 }
 
 /**
+ * --------------------------------------------------------------------------
  * TikTok OAuth Callback
+ * --------------------------------------------------------------------------
  */
 export async function tiktokCallback(req, res) {
   try {
-   const result = await handleCallback({
-  platform: "tiktok",
-  query: req.query,
-});
+    const result = await handleCallback({
+      platform: "tiktok",
+      query: req.query,
+    });
 
-return res.redirect(
-  `askrae://oauth/success?platform=tiktok&account=${encodeURIComponent(
-    result.account.username ??
-      result.account.displayName ??
-      ""
-  )}`
-);
+    return res.redirect(
+      `askrae://oauth/success?platform=tiktok&account=${encodeURIComponent(
+        result.account.username ??
+        result.account.displayName ??
+        ""
+      )}`
+    );
 
   } catch (error) {
     console.error("TikTok callback failed:");

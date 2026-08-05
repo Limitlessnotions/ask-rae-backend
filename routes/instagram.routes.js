@@ -1,7 +1,6 @@
 import express from "express";
 
 import { verifyUser } from "../middleware/auth.middleware.js";
-import { createConnection } from "../services/oauth/oauth.service.js";
 
 import {
   loginWithInstagram,
@@ -11,16 +10,16 @@ import {
 const router = express.Router();
 
 /**
- * Connect Instagram
+ * Start Instagram OAuth
  */
-router.get(
-  "/instagram",
+router.post(
+  "/instagram/start",
   verifyUser,
   loginWithInstagram
 );
 
 /**
- * Instagram OAuth Callback
+ * Instagram Callback
  */
 router.get(
   "/instagram/callback",

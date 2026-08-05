@@ -4,7 +4,9 @@ import {
 } from "../services/oauth/oauth.service.js";
 
 /**
+ * --------------------------------------------------------------------------
  * Start Instagram OAuth
+ * --------------------------------------------------------------------------
  */
 export async function loginWithInstagram(req, res) {
   try {
@@ -13,7 +15,10 @@ export async function loginWithInstagram(req, res) {
       platform: "instagram",
     });
 
-    return res.redirect(result.authorizationUrl);
+    return res.json({
+      success: true,
+      authorizationUrl: result.authorizationUrl,
+    });
 
   } catch (error) {
     console.error(error);
@@ -26,25 +31,26 @@ export async function loginWithInstagram(req, res) {
 }
 
 /**
+ * --------------------------------------------------------------------------
  * Instagram OAuth Callback
+ * --------------------------------------------------------------------------
  */
 export async function instagramCallback(req, res) {
   try {
-  const result = await handleCallback({
-  platform: "instagram",
-  query: req.query,
-});
+    const result = await handleCallback({
+      platform: "instagram",
+      query: req.query,
+    });
 
-return res.redirect(
-  `askrae://oauth/success?platform=instagram&account=${encodeURIComponent(
-    result.account.username ??
-      result.account.displayName ??
-      ""
-  )}`
-);
+    return res.redirect(
+      `askrae://oauth/success?platform=instagram&account=${encodeURIComponent(
+        result.account.username ??
+        result.account.displayName ??
+        ""
+      )}`
+    );
 
   } catch (error) {
-    console.error("Instagram callback failed:");
     console.error(error);
 
     return res.redirect(

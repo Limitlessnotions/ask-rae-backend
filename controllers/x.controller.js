@@ -4,7 +4,9 @@ import {
 } from "../services/oauth/oauth.service.js";
 
 /**
+ * --------------------------------------------------------------------------
  * Start X OAuth
+ * --------------------------------------------------------------------------
  */
 export async function loginWithX(req, res) {
   try {
@@ -13,7 +15,10 @@ export async function loginWithX(req, res) {
       platform: "x",
     });
 
-    return res.redirect(result.authorizationUrl);
+    return res.json({
+      success: true,
+      authorizationUrl: result.authorizationUrl,
+    });
 
   } catch (error) {
     console.error(error);
@@ -26,22 +31,24 @@ export async function loginWithX(req, res) {
 }
 
 /**
+ * --------------------------------------------------------------------------
  * X OAuth Callback
+ * --------------------------------------------------------------------------
  */
 export async function xCallback(req, res) {
   try {
     const result = await handleCallback({
-  platform: "x",
-  query: req.query,
-});
+      platform: "x",
+      query: req.query,
+    });
 
-return res.redirect(
-  `askrae://oauth/success?platform=x&account=${encodeURIComponent(
-    result.account.username ??
-      result.account.displayName ??
-      ""
-  )}`
-);
+    return res.redirect(
+      `askrae://oauth/success?platform=x&account=${encodeURIComponent(
+        result.account.username ??
+        result.account.displayName ??
+        ""
+      )}`
+    );
 
   } catch (error) {
     console.error("X callback failed:");

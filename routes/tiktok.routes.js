@@ -3,28 +3,27 @@ import express from "express";
 import { verifyUser } from "../middleware/auth.middleware.js";
 
 import {
-  createConnection,
-} from "../services/oauth/oauth.service.js";
-
-import {
   loginWithTikTok,
   tiktokCallback,
 } from "../controllers/tiktok.controller.js";
 
 const router = express.Router();
 
-
 /**
- * Production Route
+ * --------------------------------------------------------------------------
+ * Start TikTok OAuth
+ * --------------------------------------------------------------------------
  */
-router.get(
-  "/tiktok",
+router.post(
+  "/tiktok/start",
   verifyUser,
   loginWithTikTok
 );
 
 /**
- * Callback
+ * --------------------------------------------------------------------------
+ * TikTok Callback
+ * --------------------------------------------------------------------------
  */
 router.get(
   "/tiktok/callback",

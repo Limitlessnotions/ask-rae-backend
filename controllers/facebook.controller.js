@@ -1,7 +1,12 @@
-import { createConnection, handleCallback } from "../services/oauth/oauth.service.js";
+import {
+  createConnection,
+  handleCallback,
+} from "../services/oauth/oauth.service.js";
 
 /**
+ * --------------------------------------------------------------------------
  * Start Facebook OAuth
+ * --------------------------------------------------------------------------
  */
 export async function loginWithFacebook(req, res) {
   try {
@@ -10,7 +15,10 @@ export async function loginWithFacebook(req, res) {
       platform: "facebook",
     });
 
-    return res.redirect(result.authorizationUrl);
+    return res.json({
+      success: true,
+      authorizationUrl: result.authorizationUrl,
+    });
 
   } catch (error) {
     console.error(error);
@@ -23,30 +31,26 @@ export async function loginWithFacebook(req, res) {
 }
 
 /**
+ * --------------------------------------------------------------------------
  * Facebook OAuth Callback
+ * --------------------------------------------------------------------------
  */
 export async function facebookCallback(req, res) {
-  console.log("=================================");
-  console.log("FACEBOOK CALLBACK HIT");
-  console.log("Query:", req.query);
-  console.log("=================================");
-
   try {
-   const result = await handleCallback({
-  platform: "facebook",
-  query: req.query,
-});
+    const result = await handleCallback({
+      platform: "facebook",
+      query: req.query,
+    });
 
-return res.redirect(
-  `askrae://oauth/success?platform=facebook&account=${encodeURIComponent(
-    result.account.displayName ??
-      result.account.username ??
-      ""
-  )}`
-);
+    return res.redirect(
+      `askrae://oauth/success?platform=facebook&account=${encodeURIComponent(
+        result.account.name ??
+        result.account.username ??
+        ""
+      )}`
+    );
 
   } catch (error) {
-    console.error("Facebook callback failed:");
     console.error(error);
 
     return res.redirect(
