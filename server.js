@@ -12,6 +12,11 @@ import xRoutes from "./routes/x.routes.js";
 import mediaRoutes from "./routes/media.routes.js";
 import subscriptionRoutes from "./routes/subscription.routes.js";
 import revenueCatRoutes from "./routes/revenuecat.routes.js";
+import affirmationRoutes from "./routes/affirmation.routes.js";
+import reminderRoutes from "./routes/reminder.routes.js";
+import calendarRoutes from "./routes/calendar.routes.js";
+import wellnessRoutes from "./routes/wellness.routes.js";
+import accountabilityRoutes from "./routes/accountability.routes.js";
 
 dotenv.config();
 
@@ -32,27 +37,70 @@ app.get("/", (req, res) => {
 /**
  * AI Chat
  */
-app.use("/api/chat", chatRoutes);
+app.use(
+  "/api/chat",
+  chatRoutes
+);
 
 /**
  * Social Authentication
  */
-app.use("/auth", facebookRoutes);
-app.use("/auth", instagramRoutes);
-app.use("/auth", tiktokRoutes);
-app.use("/auth", xRoutes);
+app.use(
+  "/auth",
+  facebookRoutes
+);
 
+app.use(
+  "/auth",
+  instagramRoutes
+);
+
+app.use(
+  "/auth",
+  tiktokRoutes
+);
+
+app.use(
+  "/auth",
+  xRoutes
+);
+
+/**
+ * Affirmations
+ */
+app.use(
+  "/api/affirmation",
+  affirmationRoutes
+);
+
+/**
+ * Reminders
+ */
+app.use(
+  "/api/reminders",
+  reminderRoutes
+);
 
 /**
  * Social APIs
  */
-app.use("/api", pagesRoutes);
-app.use("/api/social", socialRoutes);
+app.use(
+  "/api",
+  pagesRoutes
+);
+
+app.use(
+  "/api/social",
+  socialRoutes
+);
 
 /**
  * Media
  */
-app.use("/api/media", mediaRoutes);
+app.use(
+  "/api/media",
+  mediaRoutes
+);
 
 /**
  * Subscriptions
@@ -60,6 +108,44 @@ app.use("/api/media", mediaRoutes);
 app.use(
   "/api",
   subscriptionRoutes
+);
+
+/**
+ * RevenueCat
+ */
+app.use(
+  "/api/revenuecat",
+  revenueCatRoutes
+);
+
+/**
+ * Calendar
+ */
+app.use(
+  "/api/calendar",
+  calendarRoutes
+);
+
+/**
+ * Wellness
+ */
+app.use(
+  "/api/wellness",
+  wellnessRoutes
+);
+
+/**
+ * Accountability
+ *
+ * GET    /api/accountability
+ * GET    /api/accountability/active
+ * POST   /api/accountability
+ * PATCH  /api/accountability/:goalId
+ * DELETE /api/accountability/:goalId
+ */
+app.use(
+  "/api/accountability",
+  accountabilityRoutes
 );
 
 const PORT =
@@ -70,8 +156,3 @@ app.listen(PORT, () => {
     `🚀 Server running on port ${PORT}`
   );
 });
-
-app.use(
-  "/api/revenuecat",
-  revenueCatRoutes
-);
