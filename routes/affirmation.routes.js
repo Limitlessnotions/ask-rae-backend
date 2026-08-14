@@ -5,20 +5,21 @@ import {
 } from "../controllers/affirmation.controller.js";
 
 import {
-  requireAuth,
+  verifyUser,
 } from "../middleware/auth.middleware.js";
 
 const router =
   express.Router();
 
 /**
- * Get a personalized daily affirmation.
- *
  * GET /api/affirmation
+ *
+ * Generate a personalized daily
+ * affirmation for the authenticated user.
  */
 router.get(
   "/",
-  requireAuth,
+  verifyUser,
   getDailyAffirmation
 );
 

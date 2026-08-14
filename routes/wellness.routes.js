@@ -5,17 +5,32 @@ import {
   updateMyWellness,
 } from "../controllers/wellness.controller.js";
 
-import { verifyUser } from "../middleware/verifyUser.js";
+import {
+  verifyUser,
+} from "../middleware/auth.middleware.js";
 
-const router = express.Router();
+const router =
+  express.Router();
 
+/**
+ * GET /api/wellness
+ *
+ * Get the authenticated user's
+ * wellness profile.
+ */
 router.get(
   "/",
   verifyUser,
   getMyWellness
 );
 
-router.put(
+/**
+ * PATCH /api/wellness
+ *
+ * Update the authenticated user's
+ * wellness profile.
+ */
+router.patch(
   "/",
   verifyUser,
   updateMyWellness

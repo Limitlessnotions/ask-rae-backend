@@ -9,7 +9,7 @@ import {
 } from "../controllers/accountability.controller.js";
 
 import {
-  requireAuth,
+  verifyUser,
 } from "../middleware/auth.middleware.js";
 
 const router =
@@ -22,7 +22,7 @@ const router =
  */
 router.get(
   "/",
-  requireAuth,
+  verifyUser,
   getUserGoals
 );
 
@@ -33,7 +33,7 @@ router.get(
  */
 router.get(
   "/active",
-  requireAuth,
+  verifyUser,
   getUserActiveGoals
 );
 
@@ -44,7 +44,7 @@ router.get(
  */
 router.post(
   "/",
-  requireAuth,
+  verifyUser,
   addUserGoal
 );
 
@@ -55,7 +55,7 @@ router.post(
  */
 router.patch(
   "/:goalId",
-  requireAuth,
+  verifyUser,
   editUserGoal
 );
 
@@ -66,7 +66,7 @@ router.patch(
  */
 router.delete(
   "/:goalId",
-  requireAuth,
+  verifyUser,
   removeUserGoal
 );
 
