@@ -508,6 +508,134 @@ ${message}`,
 }
 
 /**
+ * Extract useful long-term memories
+ * from the user's current message.
+ *
+ * This is deliberately conservative.
+ */
+export async function extractMemories(
+  message
+) {
+  const prompt = `
+You are a memory extraction system for an AI assistant.
+
+Read the user's message and identify ONLY information that would be genuinely useful to remember for future conversations.
+
+Good examples:
+
+- Their business name
+- Their business type
+- Their target audience
+- Their content preferences
+- Their preferred communication style
+- Their long-term business goals
+- Important stable preferences
+- Important recurring projects
+
+Do NOT save:
+
+- Temporary questions
+- One-time requests
+- Random conversation
+- Passwords
+- API keys
+- Payment information
+- Authentication information
+- Highly sensitive personal information
+- Medical or health information
+- Financial account information
+- Anything that is only relevant to the current request
+
+Return ONLY valid JSON.
+
+Use exactly this format:
+
+{
+  "memories": [
+    {
+      "content": "short factual statement",
+      "category": "business"
+    }
+  ]
+}
+
+Allowed categories:
+
+business
+audience
+preference
+goal
+communication
+project
+general
+
+If there is nothing worth remembering, return:
+
+{
+  "memories": []
+}
+
+User message:
+
+${message}
+`;
+
+  try {
+    const response =
+      await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+
+        contents: prompt,
+      });
+
+    const text =
+      response.text?.trim() || "";
+
+    const cleaned = text
+      .replace(
+        /^```json\s*/i,
+        ""
+      )
+      .replace(
+        /^```\s*/i,
+        ""
+      )
+      .replace(
+        /\s*```$/i,
+        ""
+      )
+      .trim();
+
+    const parsed =
+      JSON.parse(cleaned);
+
+    if (
+      !parsed ||
+      !Array.isArray(
+        parsed.memories
+      )
+    ) {
+      return [];
+    }
+
+    return parsed.memories.filter(
+      (memory) =>
+        memory &&
+        typeof memory.content ===
+          "string" &&
+        memory.content.trim()
+    );
+  } catch (error) {
+    console.error(
+      "Memory extraction error:",
+      error
+    );
+
+    return [];
+  }
+}
+
+/**
  * Extract an actionable accountability goal
  * from the user's current message.
  *
