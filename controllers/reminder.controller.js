@@ -7,10 +7,9 @@ import {
  *
  * Extract a reminder from natural language.
  *
- * The client supplies the user's IANA
- * timezone so relative times such as
- * "tomorrow at 9 AM" are interpreted
- * correctly for that user.
+ * The client supplies the user's IANA timezone so
+ * natural-language times such as "9 AM" are resolved
+ * in the user's actual local timezone.
  */
 export async function parseReminder(
   req,
@@ -34,10 +33,22 @@ export async function parseReminder(
       });
     }
 
+    if (
+      !timezone ||
+      typeof timezone !== "string" ||
+      !timezone.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "User timezone is required.",
+      });
+    }
+
     const reminder =
       await extractReminder(
         message.trim(),
-        timezone
+        timezone.trim()
       );
 
     return res.json({
