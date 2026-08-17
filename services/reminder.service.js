@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { DateTime } from "luxon";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -7,18 +8,43 @@ const ai = new GoogleGenAI({
 /**
  * Extract a reminder request from natural language.
  *
- * Returns null when the message is not a reminder request.
+ * The user's timezone is supplied by the client.
+ * All returned dates are normalized to UTC ISO strings.
  */
 export async function extractReminder(
-  message
+  message,
+  timezone
 ) {
-  const now = new Date();
+  const userZone =
+    DateTime.local().zoneName;
+
+  const resolvedZone =
+    timezone &&
+    DateTime.now().setZone(timezone).isValid
+      ? timezone
+      : userZone;
+
+  const now =
+    DateTime.now().setZone(
+      resolvedZone
+    );
 
   const prompt = `
 You are a reminder extraction system for Ask Rae.
 
-Current date and time:
-${now.toISOString()}
+The user is in this IANA timezone:
+
+${resolvedZone}
+
+Current local date and time for this user:
+
+${now.toFormat(
+  "yyyy-MM-dd HH:mm:ss ZZZZ"
+)}
+
+Current UTC time:
+
+${now.toUTC().toISO()}
 
 Read the user's message and determine whether they are asking
 Rae to create a reminder.
@@ -31,7 +57,7 @@ If the user IS asking for a reminder:
   "isReminder": true,
   "title": "short reminder title",
   "body": "friendly reminder message",
-  "date": "ISO-8601 datetime"
+  "date": "ISO-8601 datetime WITH timezone offset"
 }
 
 If the user is NOT asking for a reminder:
@@ -42,7 +68,9 @@ If the user is NOT asking for a reminder:
 
 Rules:
 
-- Resolve relative dates using the current date/time.
+- Interpret all dates and times in the user's timezone:
+  ${resolvedZone}
+- Resolve relative dates using the user's current local date and time.
 - Resolve phrases such as:
   "tomorrow"
   "tonight"
@@ -51,6 +79,8 @@ Rules:
   "in two hours"
   "in 30 minutes"
   "at 7 PM tomorrow"
+- The returned date MUST contain the correct timezone offset.
+- Do not interpret the time as UTC unless the user explicitly says UTC.
 - Do not invent a reminder if the user did not ask for one.
 - The date must be in the future.
 - Keep title concise.
@@ -80,7 +110,8 @@ ${message}
       .replace(/\s*```$/i, "")
       .trim();
 
-    const parsed = JSON.parse(cleaned);
+    const parsed =
+      JSON.parse(cleaned);
 
     if (!parsed?.isReminder) {
       return null;
@@ -94,21 +125,43 @@ ${message}
       return null;
     }
 
-    const date = new Date(
-      parsed.date
-    );
+    /**
+     * Parse the AI-generated datetime.
+     *
+     * setZone: true preserves the timezone
+     * supplied by the AI instead of converting
+     * it immediately.
+     */
+    const date =
+      DateTime.fromISO(
+        String(parsed.date),
+        {
+          setZone: true,
+        }
+      );
 
     if (
-      Number.isNaN(date.getTime()) ||
-      date.getTime() <= Date.now()
+      !date.isValid ||
+      date.toMillis() <= DateTime.now().toMillis()
     ) {
       return null;
     }
 
+    /**
+     * Normalize to UTC before returning.
+     *
+     * This makes the backend representation
+     * consistent regardless of where the user is.
+     */
     return {
-      title: String(parsed.title).trim(),
-      body: String(parsed.body).trim(),
-      date: date.toISOString(),
+      title:
+        String(parsed.title).trim(),
+
+      body:
+        String(parsed.body).trim(),
+
+      date:
+        date.toUTC().toISO(),
     };
   } catch (error) {
     console.error(

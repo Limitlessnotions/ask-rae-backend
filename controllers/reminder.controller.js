@@ -7,23 +7,10 @@ import {
  *
  * Extract a reminder from natural language.
  *
- * Example:
- *
- * "Remind me to post tomorrow at 7pm."
- *
- * Returns:
- *
- * {
- *   success: true,
- *   reminder: {
- *     title,
- *     body,
- *     date
- *   }
- * }
- *
- * Returns reminder: null when the
- * message is not a reminder request.
+ * The client supplies the user's IANA
+ * timezone so relative times such as
+ * "tomorrow at 9 AM" are interpreted
+ * correctly for that user.
  */
 export async function parseReminder(
   req,
@@ -32,6 +19,7 @@ export async function parseReminder(
   try {
     const {
       message,
+      timezone,
     } = req.body;
 
     if (
@@ -48,7 +36,8 @@ export async function parseReminder(
 
     const reminder =
       await extractReminder(
-        message.trim()
+        message.trim(),
+        timezone
       );
 
     return res.json({

@@ -1,28 +1,53 @@
 import { GoogleGenAI } from "@google/genai";
+import { DateTime } from "luxon";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
 /**
- * Extract a calendar event from
- * natural language.
+ * Extract a calendar event from natural language.
+ *
+ * The user's timezone is supplied by the client.
+ * Returned startDate is normalized to UTC.
  */
 export async function extractCalendarEvent(
-  message
+  message,
+  timezone
 ) {
-  const now = new Date();
+  const fallbackZone =
+    DateTime.local().zoneName;
+
+  const resolvedZone =
+    timezone &&
+    DateTime.now().setZone(timezone).isValid
+      ? timezone
+      : fallbackZone;
+
+  const now =
+    DateTime.now().setZone(
+      resolvedZone
+    );
 
   const prompt = `
-You are the calendar extraction system
-for Ask Rae.
+You are the calendar extraction system for Ask Rae.
 
-Current date and time:
-${now.toISOString()}
+The user is in this IANA timezone:
 
-Determine whether the user's message
-is asking Rae to add something to their
-calendar.
+${resolvedZone}
+
+Current local date and time for this user:
+
+${now.toFormat(
+  "yyyy-MM-dd HH:mm:ss ZZZZ"
+)}
+
+Current UTC time:
+
+${now.toUTC().toISO()}
+
+Determine whether the user's message is asking Rae
+to add something to their calendar.
 
 Return ONLY valid JSON.
 
@@ -32,7 +57,7 @@ If the user wants a calendar event:
   "isEvent": true,
   "title": "short event title",
   "notes": "optional useful notes",
-  "startDate": "ISO-8601 datetime",
+  "startDate": "ISO-8601 datetime WITH timezone offset",
   "durationMinutes": 30
 }
 
@@ -44,6 +69,8 @@ If the user does NOT want a calendar event:
 
 RULES:
 
+- Interpret all dates and times in the user's timezone:
+  ${resolvedZone}
 - Resolve relative dates.
 - Resolve relative times.
 - Understand natural language.
@@ -53,6 +80,8 @@ RULES:
 - "Remind me" alone does NOT necessarily mean calendar event.
 - Do not create calendar events unless the user actually requests
   scheduling/calendar functionality.
+- The returned startDate MUST contain the correct timezone offset.
+- Do not interpret times as UTC unless the user explicitly says UTC.
 - The date must be in the future.
 - Default duration is 30 minutes.
 - Return ONLY JSON.
@@ -94,13 +123,17 @@ ${message}
     }
 
     const startDate =
-      new Date(parsed.startDate);
+      DateTime.fromISO(
+        String(parsed.startDate),
+        {
+          setZone: true,
+        }
+      );
 
     if (
-      Number.isNaN(
-        startDate.getTime()
-      ) ||
-      startDate.getTime() <= Date.now()
+      !startDate.isValid ||
+      startDate.toMillis() <=
+        DateTime.now().toMillis()
     ) {
       return null;
     }
@@ -120,9 +153,10 @@ ${message}
           : "",
 
       startDate:
-        startDate.toISOString(),
+        startDate.toUTC().toISO(),
 
-      durationMinutes: duration,
+      durationMinutes:
+        duration,
     };
   } catch (error) {
     console.error(

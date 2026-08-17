@@ -2,16 +2,26 @@ import {
   extractCalendarEvent,
 } from "../services/calendar.service.js";
 
+/**
+ * POST /api/calendar/parse
+ *
+ * Extract a calendar event from natural
+ * language using the user's timezone.
+ */
 export async function parseCalendarEvent(
   req,
   res
 ) {
   try {
-    const { message } = req.body;
+    const {
+      message,
+      timezone,
+    } = req.body;
 
     if (
       !message ||
-      typeof message !== "string"
+      typeof message !== "string" ||
+      !message.trim()
     ) {
       return res.status(400).json({
         success: false,
@@ -22,7 +32,8 @@ export async function parseCalendarEvent(
 
     const event =
       await extractCalendarEvent(
-        message.trim()
+        message.trim(),
+        timezone
       );
 
     return res.json({
@@ -38,6 +49,7 @@ export async function parseCalendarEvent(
     return res.status(500).json({
       success: false,
       message:
+        error.message ||
         "Unable to process calendar request.",
     });
   }
