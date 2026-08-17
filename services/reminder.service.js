@@ -30,13 +30,13 @@ export async function extractReminder(
     );
 
   const prompt = `
-You are a reminder extraction system for Ask Rae.
+You are a STRICT reminder extraction system for Ask Rae.
 
-The user is in this IANA timezone:
+The user's IANA timezone is:
 
 ${resolvedZone}
 
-Current local date and time for this user:
+Current local date and time:
 
 ${now.toFormat(
   "yyyy-MM-dd HH:mm:ss ZZZZ"
@@ -46,12 +46,12 @@ Current UTC time:
 
 ${now.toUTC().toISO()}
 
-Read the user's message and determine whether they are asking
-Rae to create a reminder.
+Your job is ONLY to determine whether the user explicitly wants
+Rae to create a reminder or notification.
 
 Return ONLY valid JSON.
 
-If the user IS asking for a reminder:
+If the user IS explicitly asking for a reminder:
 
 {
   "isReminder": true,
@@ -60,18 +60,90 @@ If the user IS asking for a reminder:
   "date": "ISO-8601 datetime WITH timezone offset"
 }
 
-If the user is NOT asking for a reminder:
+If the user is NOT explicitly asking for a reminder:
 
 {
   "isReminder": false
 }
 
-Rules:
+IMPORTANT INTENT RULES:
+
+- Only return "isReminder": true when the user explicitly wants
+  Rae to remind, notify, alert, prompt, or remind them about
+  something at a future time.
+- A goal is NOT automatically a reminder.
+- A deadline is NOT automatically a reminder.
+- An intention is NOT automatically a reminder.
+- A target date is NOT automatically a reminder.
+- A milestone is NOT automatically a reminder.
+- Never convert a goal deadline into a reminder unless the user
+  explicitly asks for a reminder.
+- "by Friday" does NOT mean "remind me on Friday".
+- "by September 30" does NOT mean "remind me on September 30".
+- "next month" does NOT mean "remind me next month".
+- "tomorrow" by itself does NOT mean reminder intent.
+- "I want to..."
+- "My goal is..."
+- "I need to..."
+- "I plan to..."
+- "I hope to..."
+- "I am going to..."
+  are NOT reminder requests unless the user also explicitly
+  asks Rae to remind or notify them.
+
+Examples that MUST be treated as NOT reminders:
+
+"I want to reach 1,000 LinkedIn followers by September 30."
+
+{
+  "isReminder": false
+}
+
+"My goal is to launch my coaching program next month."
+
+{
+  "isReminder": false
+}
+
+"I need to finish my website by Friday."
+
+{
+  "isReminder": false
+}
+
+"I want to post three times this week."
+
+{
+  "isReminder": false
+}
+
+"I plan to send the proposal tomorrow."
+
+{
+  "isReminder": false
+}
+
+Examples that MUST be treated as reminders:
+
+"Remind me to check my LinkedIn followers on September 30."
+
+"Remind me tomorrow at 9 AM to post on LinkedIn."
+
+"Set a reminder for 4 PM to call Sarah."
+
+"Alert me in 30 minutes to check my messages."
+
+"Don't let me forget to send the proposal tomorrow at 10 AM."
+
+"Remind me tonight to take the clothes out of the washing machine."
+
+For explicit reminder requests:
 
 - Interpret all dates and times in the user's timezone:
   ${resolvedZone}
-- Resolve relative dates using the user's current local date and time.
-- Resolve phrases such as:
+- Resolve relative dates using the user's current local date
+  and time.
+- Resolve:
   "tomorrow"
   "tonight"
   "this evening"
@@ -80,14 +152,30 @@ Rules:
   "in 30 minutes"
   "at 7 PM tomorrow"
 - The returned date MUST contain the correct timezone offset.
-- Do not interpret the time as UTC unless the user explicitly says UTC.
-- Do not invent a reminder if the user did not ask for one.
+- Do not interpret the time as UTC unless the user explicitly
+  says UTC.
 - The date must be in the future.
-- Keep title concise.
-- Keep body friendly and natural.
-- Return ONLY JSON.
-- Do not use markdown.
-- Do not explain your answer.
+- Keep the title concise.
+- Keep the body friendly and natural.
+
+Do NOT create a reminder if the user's message is primarily:
+
+- an accountability goal
+- a business goal
+- a personal goal
+- a project deadline
+- a milestone
+- a plan
+- an intention
+- a task they want to accomplish
+- a statement about something they need to do
+
+unless they explicitly ask Rae to remind, notify, alert,
+or prompt them.
+
+Return ONLY JSON.
+Do not use markdown.
+Do not explain your answer.
 
 User message:
 
@@ -105,9 +193,18 @@ ${message}
       response.text?.trim() || "";
 
     const cleaned = text
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/\s*```$/i, "")
+      .replace(
+        /^```json\s*/i,
+        ""
+      )
+      .replace(
+        /^```\s*/i,
+        ""
+      )
+      .replace(
+        /\s*```$/i,
+        ""
+      )
       .trim();
 
     const parsed =
@@ -142,7 +239,8 @@ ${message}
 
     if (
       !date.isValid ||
-      date.toMillis() <= DateTime.now().toMillis()
+      date.toMillis() <=
+        DateTime.now().toMillis()
     ) {
       return null;
     }
@@ -150,8 +248,8 @@ ${message}
     /**
      * Normalize to UTC before returning.
      *
-     * This makes the backend representation
-     * consistent regardless of where the user is.
+     * This keeps backend dates consistent
+     * regardless of the user's location.
      */
     return {
       title:
