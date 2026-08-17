@@ -508,134 +508,6 @@ ${message}`,
 }
 
 /**
- * Extract useful long-term memories
- * from the user's current message.
- *
- * This is deliberately conservative.
- */
-export async function extractMemories(
-  message
-) {
-  const prompt = `
-You are a memory extraction system for an AI assistant.
-
-Read the user's message and identify ONLY information that would be genuinely useful to remember for future conversations.
-
-Good examples:
-
-- Their business name
-- Their business type
-- Their target audience
-- Their content preferences
-- Their preferred communication style
-- Their long-term business goals
-- Important stable preferences
-- Important recurring projects
-
-Do NOT save:
-
-- Temporary questions
-- One-time requests
-- Random conversation
-- Passwords
-- API keys
-- Payment information
-- Authentication information
-- Highly sensitive personal information
-- Medical or health information
-- Financial account information
-- Anything that is only relevant to the current request
-
-Return ONLY valid JSON.
-
-Use exactly this format:
-
-{
-  "memories": [
-    {
-      "content": "short factual statement",
-      "category": "business"
-    }
-  ]
-}
-
-Allowed categories:
-
-business
-audience
-preference
-goal
-communication
-project
-general
-
-If there is nothing worth remembering, return:
-
-{
-  "memories": []
-}
-
-User message:
-
-${message}
-`;
-
-  try {
-    const response =
-      await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-
-        contents: prompt,
-      });
-
-    const text =
-      response.text?.trim() || "";
-
-    const cleaned = text
-      .replace(
-        /^```json\s*/i,
-        ""
-      )
-      .replace(
-        /^```\s*/i,
-        ""
-      )
-      .replace(
-        /\s*```$/i,
-        ""
-      )
-      .trim();
-
-    const parsed =
-      JSON.parse(cleaned);
-
-    if (
-      !parsed ||
-      !Array.isArray(
-        parsed.memories
-      )
-    ) {
-      return [];
-    }
-
-    return parsed.memories.filter(
-      (memory) =>
-        memory &&
-        typeof memory.content ===
-          "string" &&
-        memory.content.trim()
-    );
-  } catch (error) {
-    console.error(
-      "Memory extraction error:",
-      error
-    );
-
-    return [];
-  }
-}
-
-/**
  * Extract an actionable accountability goal
  * from the user's current message.
  *
@@ -675,6 +547,40 @@ Do NOT create a goal for:
 - Things the user has already completed
 - Vague statements with no actionable outcome
 
+DATE RULES:
+
+- If the user gives a deadline but DOES NOT
+  specify a time of day, return ONLY the
+  calendar date in this exact format:
+
+  YYYY-MM-DD
+
+- Examples:
+
+  "by September 30"
+  -> "2026-09-30"
+
+  "by Friday"
+  -> the correct Friday as YYYY-MM-DD
+
+  "next month"
+  -> the appropriate calendar date only
+     when the user's statement clearly provides
+     a specific deadline date.
+
+- Do NOT add a time such as 00:00, 23:59,
+  12:59 AM, or 11:59 PM when the user did not
+  specify a time.
+
+- Do NOT convert a date-only deadline into UTC.
+
+- If the user explicitly specifies a time of day,
+  return a complete ISO 8601 datetime.
+
+- If there is no due date, use null.
+
+- Never invent a deadline.
+
 Return ONLY valid JSON.
 
 Use exactly this format:
@@ -693,12 +599,25 @@ OR:
   }
 }
 
-If the user clearly provides a due date,
-return it as an ISO 8601 date/time string.
+For a date-only deadline:
 
-If there is no due date, use null.
+{
+  "goal": {
+    "title": "Reach 1,000 LinkedIn followers",
+    "description": "Grow LinkedIn audience to reach 1,000 followers.",
+    "dueDate": "2026-09-30"
+  }
+}
 
-Do not invent a due date.
+For an explicit time:
+
+{
+  "goal": {
+    "title": "Send proposal",
+    "description": "Send the proposal to the client.",
+    "dueDate": "2026-09-30T17:00:00+01:00"
+  }
+}
 
 User message:
 
@@ -752,6 +671,51 @@ ${message}
       return null;
     }
 
+    let dueDate =
+      null;
+
+    if (
+      typeof goal.dueDate ===
+        "string" &&
+      goal.dueDate.trim()
+    ) {
+      const candidate =
+        goal.dueDate.trim();
+
+      /**
+       * Date-only deadlines must remain
+       * date-only values.
+       *
+       * This prevents JavaScript Date / UTC
+       * conversion from moving September 30
+       * into October 1.
+       */
+      if (
+        /^\d{4}-\d{2}-\d{2}$/.test(
+          candidate
+        )
+      ) {
+        dueDate = candidate;
+      } else {
+        /**
+         * Explicit date + time.
+         *
+         * Keep the complete ISO datetime.
+         */
+        const parsedDate =
+          new Date(candidate);
+
+        if (
+          !Number.isNaN(
+            parsedDate.getTime()
+          )
+        ) {
+          dueDate =
+            parsedDate.toISOString();
+        }
+      }
+    }
+
     return {
       title:
         goal.title.trim(),
@@ -762,9 +726,7 @@ ${message}
           ? goal.description.trim()
           : "",
 
-      dueDate:
-        goal.dueDate ||
-        null,
+      dueDate,
     };
   } catch (error) {
     console.error(
