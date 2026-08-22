@@ -1,8 +1,16 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const ai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
+
+/**
+ * Ask Rae's primary AI model.
+ *
+ * GPT-5.6 Luna is optimized for
+ * cost-sensitive, high-volume workloads.
+ */
+const AI_MODEL = "gpt-5.6-luna";
 
 /**
  * Generate Rae's response.
@@ -167,6 +175,9 @@ Water remaining: ${remainingMl} ml
 Hydration progress: ${hydrationPercentage}%
 `;
 
+  /**
+   * Rae's main system instructions.
+   */
   const systemPrompt = `
 You are Ask Rae.
 
@@ -493,18 +504,32 @@ Do not force the signature into every response.
 Always make your responses feel premium, polished, feminine, motivational and genuinely useful.
 `;
 
-  const response =
-    await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+  try {
+    const response =
+      await ai.responses.create({
+        model: AI_MODEL,
+        instructions: systemPrompt,
+        input: message,
+      });
 
-      contents: `${systemPrompt}
+    const text =
+      response.output_text?.trim();
 
-User:
+    if (!text) {
+      throw new Error(
+        "OpenAI returned an empty response."
+      );
+    }
 
-${message}`,
-    });
+    return text;
+  } catch (error) {
+    console.error(
+      "Rae response generation error:",
+      error
+    );
 
-  return response.text;
+    throw error;
+  }
 }
 
 /**
@@ -517,7 +542,7 @@ export async function extractMemories(
   message
 ) {
   const prompt = `
-You are a memory extraction system for an AI assistant.
+You are a memory extraction system for Ask Rae.
 
 Read the user's message and identify ONLY information that would be genuinely useful to remember for future conversations.
 
@@ -582,32 +607,83 @@ ${message}
 
   try {
     const response =
-      await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+      await ai.responses.create({
+        model: AI_MODEL,
 
-        contents: prompt,
+        instructions:
+          "Return only valid JSON. Do not use markdown fences.",
+
+        input: prompt,
+
+        text: {
+          format: {
+            type: "json_schema",
+
+            name: "memory_extraction",
+
+            strict: true,
+
+            schema: {
+              type: "object",
+
+              properties: {
+                memories: {
+                  type: "array",
+
+                  items: {
+                    type: "object",
+
+                    properties: {
+                      content: {
+                        type: "string",
+                      },
+
+                      category: {
+                        type: "string",
+
+                        enum: [
+                          "business",
+                          "audience",
+                          "preference",
+                          "goal",
+                          "communication",
+                          "project",
+                          "general",
+                        ],
+                      },
+                    },
+
+                    required: [
+                      "content",
+                      "category",
+                    ],
+
+                    additionalProperties:
+                      false,
+                  },
+                },
+              },
+
+              required: [
+                "memories",
+              ],
+
+              additionalProperties:
+                false,
+            },
+          },
+        },
       });
 
     const text =
-      response.text?.trim() || "";
+      response.output_text?.trim();
 
-    const cleaned = text
-      .replace(
-        /^```json\s*/i,
-        ""
-      )
-      .replace(
-        /^```\s*/i,
-        ""
-      )
-      .replace(
-        /\s*```$/i,
-        ""
-      )
-      .trim();
+    if (!text) {
+      return [];
+    }
 
     const parsed =
-      JSON.parse(cleaned);
+      JSON.parse(text);
 
     if (
       !parsed ||
@@ -623,7 +699,9 @@ ${message}
         memory &&
         typeof memory.content ===
           "string" &&
-        memory.content.trim()
+        memory.content.trim() &&
+        typeof memory.category ===
+          "string"
     );
   } catch (error) {
     console.error(
@@ -645,15 +723,11 @@ export async function extractGoal(
   message
 ) {
   const prompt = `
-You are an accountability goal extraction
-system for Ask Rae.
+You are an accountability goal extraction system for Ask Rae.
 
-Read the user's message and determine whether
-they are clearly expressing an actionable goal
-or task that Rae should help them track.
+Read the user's message and determine whether they are clearly expressing an actionable goal or task that Rae should help them track.
 
-Only create a goal when the user clearly
-expresses an intention to accomplish something.
+Only create a goal when the user clearly expresses an intention to accomplish something.
 
 Good examples:
 
@@ -661,8 +735,7 @@ Good examples:
 
 "I want to post three times this week."
 
-"My goal is to launch my coaching program
-next month."
+"My goal is to launch my coaching program next month."
 
 "I need to send the proposal tomorrow."
 
@@ -677,9 +750,7 @@ Do NOT create a goal for:
 
 DATE RULES:
 
-- If the user gives a deadline but DOES NOT
-  specify a time of day, return ONLY the
-  calendar date in this exact format:
+- If the user gives a deadline but DOES NOT specify a time of day, return ONLY the calendar date in this exact format:
 
   YYYY-MM-DD
 
@@ -691,19 +762,13 @@ DATE RULES:
   "by Friday"
   -> the correct Friday as YYYY-MM-DD
 
-  "next month"
-  -> the appropriate calendar date only
-     when the user's statement clearly provides
-     a specific deadline date.
+- If the user gives a relative date such as "tomorrow", "next week", or "next month", calculate the appropriate calendar date based on the current date.
 
-- Do NOT add a time such as 00:00, 23:59,
-  12:59 AM, or 11:59 PM when the user did not
-  specify a time.
+- Do NOT add a time such as 00:00, 23:59, 12:59 AM, or 11:59 PM when the user did not specify a time.
 
 - Do NOT convert a date-only deadline into UTC.
 
-- If the user explicitly specifies a time of day,
-  return a complete ISO 8601 datetime.
+- If the user explicitly specifies a time of day, return a complete ISO 8601 datetime.
 
 - If there is no due date, use null.
 
@@ -754,32 +819,90 @@ ${message}
 
   try {
     const response =
-      await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+      await ai.responses.create({
+        model: AI_MODEL,
 
-        contents: prompt,
+        instructions:
+          "Return only valid JSON. Do not use markdown fences.",
+
+        input: prompt,
+
+        text: {
+          format: {
+            type: "json_schema",
+
+            name: "goal_extraction",
+
+            strict: true,
+
+            schema: {
+              type: "object",
+
+              properties: {
+                goal: {
+                  anyOf: [
+                    {
+                      type: "null",
+                    },
+
+                    {
+                      type: "object",
+
+                      properties: {
+                        title: {
+                          type: "string",
+                        },
+
+                        description: {
+                          type: "string",
+                        },
+
+                        dueDate: {
+                          anyOf: [
+                            {
+                              type: "string",
+                            },
+
+                            {
+                              type: "null",
+                            },
+                          ],
+                        },
+                      },
+
+                      required: [
+                        "title",
+                        "description",
+                        "dueDate",
+                      ],
+
+                      additionalProperties:
+                        false,
+                    },
+                  ],
+                },
+              },
+
+              required: [
+                "goal",
+              ],
+
+              additionalProperties:
+                false,
+            },
+          },
+        },
       });
 
     const text =
-      response.text?.trim() || "";
+      response.output_text?.trim();
 
-    const cleaned = text
-      .replace(
-        /^```json\s*/i,
-        ""
-      )
-      .replace(
-        /^```\s*/i,
-        ""
-      )
-      .replace(
-        /\s*```$/i,
-        ""
-      )
-      .trim();
+    if (!text) {
+      return null;
+    }
 
     const parsed =
-      JSON.parse(cleaned);
+      JSON.parse(text);
 
     if (
       !parsed ||
@@ -811,12 +934,8 @@ ${message}
         goal.dueDate.trim();
 
       /**
-       * Date-only deadlines must remain
+       * Date-only deadlines remain
        * date-only values.
-       *
-       * This prevents JavaScript Date / UTC
-       * conversion from moving September 30
-       * into October 1.
        */
       if (
         /^\d{4}-\d{2}-\d{2}$/.test(
@@ -827,8 +946,6 @@ ${message}
       } else {
         /**
          * Explicit date + time.
-         *
-         * Keep the complete ISO datetime.
          */
         const parsedDate =
           new Date(candidate);

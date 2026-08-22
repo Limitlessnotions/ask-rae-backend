@@ -21,6 +21,7 @@
     "firebase-admin": "^14.2.0",
     "luxon": "^3.7.2",
     "multer": "^2.2.0",
+    "openai": "^7.5.0",
     "pkce-challenge": "^6.0.0"
   },
   "devDependencies": {
