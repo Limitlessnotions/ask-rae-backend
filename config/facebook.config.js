@@ -14,12 +14,14 @@ export function getFacebookConfig() {
 
     redirectUri: process.env.FACEBOOK_REDIRECT_URI,
 
- scopes: [
-  "public_profile",
-  "email",
-  "pages_show_list",
-  "pages_read_engagement",
-  "pages_manage_posts",
-].join(","),
+    configId: process.env.FACEBOOK_CONFIG_ID,
+
+    scopes: [
+      "public_profile",
+      "email",
+      "pages_show_list",
+      "pages_read_engagement",
+      "pages_manage_posts",
+    ].join(","),
   };
 }

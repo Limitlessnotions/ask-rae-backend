@@ -20,39 +20,41 @@ export function getFacebookLoginUrl(state) {
   console.log("=================================");
   console.log("Facebook OAuth Configuration");
   console.log("=================================");
+
   console.log(
     "FACEBOOK_APP_ID:",
     FACEBOOK_CONFIG.appId
   );
+
   console.log(
     "FACEBOOK_APP_SECRET:",
     FACEBOOK_CONFIG.appSecret
       ? "Loaded ✅"
       : "Missing ❌"
   );
+
   console.log(
     "FACEBOOK_REDIRECT_URI:",
     FACEBOOK_CONFIG.redirectUri
   );
+
   console.log(
     "FACEBOOK_CONFIG_ID:",
-    "28099936112990156"
+    FACEBOOK_CONFIG.configId
   );
+
   console.log("STATE:", state);
 
   /**
-   * Facebook Login for Business configuration
+   * Facebook Login for Business
    *
-   * The permissions are already defined inside
-   * the Meta Business Login configuration.
-   *
-   * Configuration ID:
-   * 28099936112990156
+   * Permissions are configured inside the
+   * Meta Business Login configuration.
    */
   const params = new URLSearchParams({
     client_id: FACEBOOK_CONFIG.appId,
     redirect_uri: FACEBOOK_CONFIG.redirectUri,
-    config_id: "28099936112990156",
+    config_id: FACEBOOK_CONFIG.configId,
     response_type: "code",
     state,
   });
@@ -80,10 +82,8 @@ export async function exchangeCodeForToken(code) {
     {
       params: {
         client_id: FACEBOOK_CONFIG.appId,
-        client_secret:
-          FACEBOOK_CONFIG.appSecret,
-        redirect_uri:
-          FACEBOOK_CONFIG.redirectUri,
+        client_secret: FACEBOOK_CONFIG.appSecret,
+        redirect_uri: FACEBOOK_CONFIG.redirectUri,
         code,
       },
     }
