@@ -67,8 +67,7 @@ export async function exchangeCodeForToken({
     body.toString(),
     {
       headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded",
+        "Content-Type": "application/x-www-form-urlencoded",
       },
     }
   );
@@ -97,25 +96,27 @@ export async function tiktokGet(
 
 /**
  * Get TikTok Profile
+ *
+ * TikTok API v2:
+ * GET /v2/user/info/
+ *
+ * The fields are passed as a comma-separated query parameter.
  */
-export async function getTikTokProfile(
-  accessToken
-) {
-  const response = await axios.post(
+export async function getTikTokProfile(accessToken) {
+  const response = await axios.get(
     `${BASE_URL}/user/info/`,
-    {
-      fields: [
-        "open_id",
-        "display_name",
-        "avatar_url",
-        "profile_deep_link",
-        "username",
-      ],
-    },
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
+      },
+      params: {
+        fields: [
+          "open_id",
+          "display_name",
+          "avatar_url",
+          "profile_deep_link",
+          "username",
+        ].join(","),
       },
     }
   );
