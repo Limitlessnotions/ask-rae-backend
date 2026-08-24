@@ -100,21 +100,33 @@ export async function tiktokGet(
  * TikTok API v2:
  * GET /v2/user/info/
  *
- * The fields are passed as a comma-separated query parameter.
- */
-/**
- * Get TikTok Profile
+ * Fields are passed as a comma-separated query parameter.
  */
 export async function getTikTokProfile(accessToken) {
   try {
     console.log("=================================");
     console.log("TIKTOK USER INFO REQUEST");
     console.log("=================================");
-    console.log("Access token received:", !!accessToken);
+
+    console.log(
+      "Access token received:",
+      !!accessToken
+    );
+
     console.log(
       "Access token length:",
       accessToken?.length
     );
+
+    const fields = [
+      "open_id",
+      "display_name",
+      "avatar_url",
+      "profile_deep_link",
+      "username",
+    ].join(",");
+
+    console.log("Requested fields:", fields);
 
     const response = await axios.get(
       `${BASE_URL}/user/info/`,
@@ -123,13 +135,7 @@ export async function getTikTokProfile(accessToken) {
           Authorization: `Bearer ${accessToken}`,
         },
         params: {
-          fields: [
-            "open_id",
-            "display_name",
-            "avatar_url",
-            "profile_deep_link",
-            "username",
-          ].join(","),
+          fields,
         },
       }
     );
@@ -140,6 +146,14 @@ export async function getTikTokProfile(accessToken) {
     );
 
     console.log("=================================");
+
+    if (
+      !response.data?.data?.user
+    ) {
+      throw new Error(
+        "TikTok returned no user profile data."
+      );
+    }
 
     return response.data.data.user;
 
