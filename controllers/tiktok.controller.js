@@ -54,27 +54,42 @@ export async function tiktokCallback(req, res) {
     /**
      * Build the account value safely.
      *
-     * Depending on the normalized TikTok account structure,
-     * username or displayName may be available.
+     * TikTok may return the name using different property names depending
+     * on how the account was normalized.
      */
     const account =
       result.account?.username ??
       result.account?.displayName ??
+      result.account?.display_name ??
+      result.account?.name ??
       "";
 
     /**
+     * ----------------------------------------------------------------------
+     * Redirect back to the Ask Rae mobile app
+     * ----------------------------------------------------------------------
+     *
+     * The Expo Router structure contains:
+     *
+     * src/app/(tabs)/social.tsx
+     *
+     * Therefore the actual route is:
+     *
+     * /social
+     *
+     * The "(tabs)" route group is not included in the URL.
+     *
      * IMPORTANT:
+     * Query parameters use "=":
      *
-     * Query parameters must use "=".
+     * ?status=success
      *
-     * WRONG:
-     * askrae://profile/social?status/success&platform=tiktok
+     * NOT:
      *
-     * CORRECT:
-     * askrae://profile/social?status=success&platform=tiktok
+     * ?status/success
      */
     const deepLink =
-      `askrae://profile/social` +
+      `askrae://social` +
       `?status=success` +
       `&platform=tiktok` +
       `&account=${encodeURIComponent(account)}`;
@@ -97,11 +112,10 @@ export async function tiktokCallback(req, res) {
       error?.message || "TikTok connection failed.";
 
     /**
-     * IMPORTANT:
-     * Use status=error, NOT status/error.
+     * Redirect back to the Ask Rae social page with the error.
      */
     const deepLink =
-      `askrae://profile/social` +
+      `askrae://social` +
       `?status=error` +
       `&platform=tiktok` +
       `&message=${encodeURIComponent(errorMessage)}`;
