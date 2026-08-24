@@ -12,7 +12,7 @@ export function generateStateToken() {
 }
 
 /**
- * Build Facebook OAuth login URL
+ * Build Facebook Login for Business OAuth URL
  */
 export function getFacebookLoginUrl(state) {
   const FACEBOOK_CONFIG = getFacebookConfig();
@@ -20,30 +20,49 @@ export function getFacebookLoginUrl(state) {
   console.log("=================================");
   console.log("Facebook OAuth Configuration");
   console.log("=================================");
-  console.log("FACEBOOK_APP_ID:", FACEBOOK_CONFIG.appId);
+  console.log(
+    "FACEBOOK_APP_ID:",
+    FACEBOOK_CONFIG.appId
+  );
   console.log(
     "FACEBOOK_APP_SECRET:",
-    FACEBOOK_CONFIG.appSecret ? "Loaded ✅" : "Missing ❌"
+    FACEBOOK_CONFIG.appSecret
+      ? "Loaded ✅"
+      : "Missing ❌"
   );
   console.log(
     "FACEBOOK_REDIRECT_URI:",
     FACEBOOK_CONFIG.redirectUri
   );
-  console.log("FACEBOOK_SCOPES:", FACEBOOK_CONFIG.scopes);
+  console.log(
+    "FACEBOOK_CONFIG_ID:",
+    "28099936112990156"
+  );
   console.log("STATE:", state);
 
+  /**
+   * Facebook Login for Business configuration
+   *
+   * The permissions are already defined inside
+   * the Meta Business Login configuration.
+   *
+   * Configuration ID:
+   * 28099936112990156
+   */
   const params = new URLSearchParams({
     client_id: FACEBOOK_CONFIG.appId,
     redirect_uri: FACEBOOK_CONFIG.redirectUri,
-    scope: FACEBOOK_CONFIG.scopes,
+    config_id: "28099936112990156",
     response_type: "code",
     state,
   });
 
-  const url = `https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`;
+  const url =
+    `https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`;
 
   console.log("=================================");
   console.log("Generated Facebook OAuth URL");
+  console.log("=================================");
   console.log(url);
   console.log("=================================");
 
@@ -61,8 +80,10 @@ export async function exchangeCodeForToken(code) {
     {
       params: {
         client_id: FACEBOOK_CONFIG.appId,
-        client_secret: FACEBOOK_CONFIG.appSecret,
-        redirect_uri: FACEBOOK_CONFIG.redirectUri,
+        client_secret:
+          FACEBOOK_CONFIG.appSecret,
+        redirect_uri:
+          FACEBOOK_CONFIG.redirectUri,
         code,
       },
     }
@@ -98,18 +119,23 @@ export async function graphGet(
 export async function getFacebookProfile(
   accessToken
 ) {
-  return await graphGet("/me", accessToken, {
-    fields: [
-      "id",
-      "name",
-      "email",
-      "picture.width(400).height(400)",
-    ].join(","),
-  });
+  return await graphGet(
+    "/me",
+    accessToken,
+    {
+      fields: [
+        "id",
+        "name",
+        "email",
+        "picture.width(400).height(400)",
+      ].join(","),
+    }
+  );
 }
 
 /**
- * Get all Facebook Pages managed by the authenticated user
+ * Get all Facebook Pages managed by the
+ * authenticated user.
  */
 export async function getUserPages(
   accessToken
@@ -195,6 +221,7 @@ export async function publishVideo(
 
   return response.data;
 }
+
 /**
  * Universal Facebook Publisher
  */
@@ -228,7 +255,9 @@ export async function publishFacebookContent({
         accessToken,
         pageId,
         content.imageUrl,
-        content.caption ?? content.text ?? ""
+        content.caption ??
+          content.text ??
+          ""
       );
 
     case "video":
@@ -236,7 +265,9 @@ export async function publishFacebookContent({
         accessToken,
         pageId,
         content.videoUrl,
-        content.description ?? content.text ?? ""
+        content.description ??
+          content.text ??
+          ""
       );
 
     default:

@@ -43,7 +43,7 @@ export async function instagramCallback(req, res) {
     });
 
     return res.redirect(
-      `askrae://profile/social?status/success&platform=instagram&account=${encodeURIComponent(
+      `askrae://socials?status/success&platform=instagram&account=${encodeURIComponent(
         result.account.username ??
         result.account.displayName ??
         ""
@@ -54,7 +54,7 @@ export async function instagramCallback(req, res) {
     console.error(error);
 
    return res.redirect(
-      `askrae://profile/social?status/error&platform=instagram&message=${encodeURIComponent(
+      `askrae://socials?status/error&platform=instagram&message=${encodeURIComponent(
         error.message
       )}`
     );
