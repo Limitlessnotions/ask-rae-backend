@@ -10,7 +10,26 @@ import { getTikTokConfig } from "../config/tiktok.config.js";
 const BASE_URL = "https://open.tiktokapis.com/v2";
 
 /**
- * Build TikTok OAuth URL
+ * --------------------------------------------------------------------------
+ * Build TikTok OAuth Authorization URL
+ * --------------------------------------------------------------------------
+ *
+ * Flow:
+ *
+ * Ask Rae
+ *   ↓
+ * TikTok Authorization Page
+ *   ↓
+ * User logs in / selects TikTok account
+ *   ↓
+ * User authorizes Ask Rae
+ *   ↓
+ * TikTok redirects to callback
+ *   ↓
+ * Ask Rae social page
+ *
+ * disable_auto_auth=1 is useful during testing because it prevents
+ * TikTok from automatically authorizing the currently logged-in account.
  */
 export function getTikTokAuthorizationUrl({
   state,
@@ -27,6 +46,11 @@ export function getTikTokAuthorizationUrl({
     state,
     code_challenge: codeChallenge,
     code_challenge_method: codeChallengeMethod,
+
+    // Important for testing:
+    // Prevent TikTok from automatically authorizing
+    // the currently logged-in TikTok account.
+    disable_auto_auth: "1",
   });
 
   const url =
@@ -37,9 +61,11 @@ export function getTikTokAuthorizationUrl({
   console.log("=================================");
   console.log("CLIENT KEY:", config.clientKey);
   console.log("REDIRECT URI:", config.redirectUri);
-  console.log("SCOPES:", config.scopes);
   console.log("STATE:", state);
+  console.log("PKCE ENABLED:", !!codeChallenge);
+  console.log("AUTO AUTH DISABLED: true");
   console.log("=================================");
+  console.log("TikTok Authorization URL:");
   console.log(url);
   console.log("=================================");
 
@@ -47,7 +73,9 @@ export function getTikTokAuthorizationUrl({
 }
 
 /**
- * Exchange authorization code for access token
+ * --------------------------------------------------------------------------
+ * Exchange Authorization Code For Access Token
+ * --------------------------------------------------------------------------
  */
 export async function exchangeCodeForToken({
   code,
@@ -65,7 +93,7 @@ export async function exchangeCodeForToken({
   });
 
   console.log("=================================");
-  console.log("TIKTOK TOKEN EXCHANGE");
+  console.log("TIKTOK TOKEN REQUEST");
   console.log("=================================");
   console.log("Authorization code received:", !!code);
   console.log("Code verifier received:", !!codeVerifier);
@@ -92,9 +120,12 @@ export async function exchangeCodeForToken({
       JSON.stringify(
         {
           ...response.data,
+
+          // Never print real tokens in production logs.
           access_token: response.data?.access_token
             ? "[REDACTED]"
             : undefined,
+
           refresh_token: response.data?.refresh_token
             ? "[REDACTED]"
             : undefined,
@@ -134,7 +165,9 @@ export async function exchangeCodeForToken({
 }
 
 /**
- * Generic TikTok GET helper
+ * --------------------------------------------------------------------------
+ * Generic TikTok GET Helper
+ * --------------------------------------------------------------------------
  */
 export async function tiktokGet(
   endpoint,
@@ -153,12 +186,15 @@ export async function tiktokGet(
 }
 
 /**
- * Get TikTok Profile
+ * --------------------------------------------------------------------------
+ * Get TikTok User Profile
+ * --------------------------------------------------------------------------
  *
  * TikTok API v2:
+ *
  * GET /v2/user/info/
  *
- * The fields are passed as a comma-separated query parameter.
+ * Fields are passed as a comma-separated query parameter.
  */
 export async function getTikTokProfile(accessToken) {
   try {
@@ -176,13 +212,6 @@ export async function getTikTokProfile(accessToken) {
       accessToken?.length
     );
 
-    /*
-     * Start with fields covered by user.info.basic.
-     *
-     * username and profile_deep_link require
-     * user.info.profile under TikTok's current
-     * scope model.
-     */
     const fields = [
       "open_id",
       "display_name",
@@ -219,19 +248,31 @@ export async function getTikTokProfile(accessToken) {
 
     console.log("=================================");
 
+    /**
+     * TikTok returns:
+     *
+     * {
+     *   data: {
+     *     user: {...}
+     *   },
+     *   error: {
+     *     code: "ok"
+     *   }
+     * }
+     */
     if (
-      response.data?.error &&
+      response.data?.error?.code &&
       response.data.error.code !== "ok"
     ) {
       throw new Error(
         response.data.error.message ||
-          "TikTok User Info request failed."
+        "TikTok user information request failed."
       );
     }
 
     if (!response.data?.data?.user) {
       throw new Error(
-        "TikTok User Info response did not contain a user."
+        "TikTok returned no user profile."
       );
     }
 

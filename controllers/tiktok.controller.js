@@ -89,7 +89,7 @@ export async function tiktokCallback(req, res) {
      * ?status/success
      */
     const deepLink =
-      `askrae://social` +
+      `askrae://socials` +
       `?status=success` +
       `&platform=tiktok` +
       `&account=${encodeURIComponent(account)}`;
@@ -115,7 +115,7 @@ export async function tiktokCallback(req, res) {
      * Redirect back to the Ask Rae social page with the error.
      */
     const deepLink =
-      `askrae://social` +
+      `askrae://socials` +
       `?status=error` +
       `&platform=tiktok` +
       `&message=${encodeURIComponent(errorMessage)}`;
