@@ -101,8 +101,21 @@ export async function tiktokGet(
  * GET /v2/user/info/
  *
  * The fields are passed as a comma-separated query parameter.
- */export async function getTikTokProfile(accessToken) {
+ */
+/**
+ * Get TikTok Profile
+ */
+export async function getTikTokProfile(accessToken) {
   try {
+    console.log("=================================");
+    console.log("TIKTOK USER INFO REQUEST");
+    console.log("=================================");
+    console.log("Access token received:", !!accessToken);
+    console.log(
+      "Access token length:",
+      accessToken?.length
+    );
+
     const response = await axios.get(
       `${BASE_URL}/user/info/`,
       {
@@ -121,21 +134,47 @@ export async function tiktokGet(
       }
     );
 
+    console.log("TikTok User Info Response:");
+    console.log(
+      JSON.stringify(response.data, null, 2)
+    );
+
+    console.log("=================================");
+
     return response.data.data.user;
 
   } catch (error) {
     console.error("=================================");
-    console.error("TIKTOK USER INFO ERROR");
+    console.error("TIKTOK USER INFO FAILED");
     console.error("=================================");
 
-    console.error("Status:", error.response?.status);
     console.error(
-      "TikTok response:",
+      "HTTP Status:",
+      error.response?.status
+    );
+
+    console.error(
+      "TikTok Error:",
       JSON.stringify(
         error.response?.data,
         null,
         2
       )
+    );
+
+    console.error(
+      "TikTok Error Code:",
+      error.response?.data?.error?.code
+    );
+
+    console.error(
+      "TikTok Error Message:",
+      error.response?.data?.error?.message
+    );
+
+    console.error(
+      "TikTok Log ID:",
+      error.response?.data?.error?.log_id
     );
 
     console.error("=================================");
