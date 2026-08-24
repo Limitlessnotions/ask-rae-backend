@@ -29,13 +29,15 @@ export function getTikTokAuthorizationUrl({
     code_challenge_method: codeChallengeMethod,
   });
 
-  const url = `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
+  const url =
+    `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
 
   console.log("=================================");
   console.log("TikTok OAuth Configuration");
   console.log("=================================");
   console.log("CLIENT KEY:", config.clientKey);
   console.log("REDIRECT URI:", config.redirectUri);
+  console.log("SCOPES:", config.scopes);
   console.log("STATE:", state);
   console.log("=================================");
   console.log(url);
@@ -62,17 +64,73 @@ export async function exchangeCodeForToken({
     code_verifier: codeVerifier,
   });
 
-  const response = await axios.post(
-    `${BASE_URL}/oauth/token/`,
-    body.toString(),
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-    }
-  );
+  console.log("=================================");
+  console.log("TIKTOK TOKEN EXCHANGE");
+  console.log("=================================");
+  console.log("Authorization code received:", !!code);
+  console.log("Code verifier received:", !!codeVerifier);
+  console.log("Redirect URI:", config.redirectUri);
+  console.log("=================================");
 
-  return response.data;
+  try {
+    const response = await axios.post(
+      `${BASE_URL}/oauth/token/`,
+      body.toString(),
+      {
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded",
+        },
+      }
+    );
+
+    console.log("=================================");
+    console.log("TIKTOK TOKEN RESPONSE");
+    console.log("=================================");
+
+    console.log(
+      JSON.stringify(
+        {
+          ...response.data,
+          access_token: response.data?.access_token
+            ? "[REDACTED]"
+            : undefined,
+          refresh_token: response.data?.refresh_token
+            ? "[REDACTED]"
+            : undefined,
+        },
+        null,
+        2
+      )
+    );
+
+    console.log("=================================");
+
+    return response.data;
+
+  } catch (error) {
+    console.error("=================================");
+    console.error("TIKTOK TOKEN EXCHANGE FAILED");
+    console.error("=================================");
+
+    console.error(
+      "HTTP Status:",
+      error.response?.status
+    );
+
+    console.error(
+      "TikTok Error:",
+      JSON.stringify(
+        error.response?.data,
+        null,
+        2
+      )
+    );
+
+    console.error("=================================");
+
+    throw error;
+  }
 }
 
 /**
@@ -100,7 +158,7 @@ export async function tiktokGet(
  * TikTok API v2:
  * GET /v2/user/info/
  *
- * Fields are passed as a comma-separated query parameter.
+ * The fields are passed as a comma-separated query parameter.
  */
 export async function getTikTokProfile(accessToken) {
   try {
@@ -118,15 +176,23 @@ export async function getTikTokProfile(accessToken) {
       accessToken?.length
     );
 
+    /*
+     * Start with fields covered by user.info.basic.
+     *
+     * username and profile_deep_link require
+     * user.info.profile under TikTok's current
+     * scope model.
+     */
     const fields = [
       "open_id",
       "display_name",
       "avatar_url",
-      "profile_deep_link",
-      "username",
     ].join(",");
 
-    console.log("Requested fields:", fields);
+    console.log(
+      "Requested fields:",
+      fields
+    );
 
     const response = await axios.get(
       `${BASE_URL}/user/info/`,
@@ -134,6 +200,7 @@ export async function getTikTokProfile(accessToken) {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
+
         params: {
           fields,
         },
@@ -141,17 +208,30 @@ export async function getTikTokProfile(accessToken) {
     );
 
     console.log("TikTok User Info Response:");
+
     console.log(
-      JSON.stringify(response.data, null, 2)
+      JSON.stringify(
+        response.data,
+        null,
+        2
+      )
     );
 
     console.log("=================================");
 
     if (
-      !response.data?.data?.user
+      response.data?.error &&
+      response.data.error.code !== "ok"
     ) {
       throw new Error(
-        "TikTok returned no user profile data."
+        response.data.error.message ||
+          "TikTok User Info request failed."
+      );
+    }
+
+    if (!response.data?.data?.user) {
+      throw new Error(
+        "TikTok User Info response did not contain a user."
       );
     }
 
