@@ -1,8 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { DateTime } from "luxon";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const ai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 /**
@@ -93,14 +93,13 @@ ${message}
 `;
 
   try {
-    const response =
-      await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: prompt,
-      });
+    const response = await ai.responses.create({
+      model: "gpt-5-mini",
+      input: prompt,
+    });
 
     const text =
-      response.text?.trim() || "";
+      response.output_text?.trim() || "";
 
     const cleaned = text
       .replace(/^```json\s*/i, "")

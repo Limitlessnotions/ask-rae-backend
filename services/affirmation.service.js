@@ -1,7 +1,7 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const ai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 /**
@@ -60,10 +60,10 @@ RULES
 - Return ONLY the affirmation.
 `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.6-flash",
-    contents: prompt,
+  const response = await ai.responses.create({
+    model: "gpt-5-mini",
+    input: prompt,
   });
 
-  return response.text?.trim() || "";
+  return response.output_text?.trim() || "";
 }
