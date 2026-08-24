@@ -101,25 +101,45 @@ export async function tiktokGet(
  * GET /v2/user/info/
  *
  * The fields are passed as a comma-separated query parameter.
- */
-export async function getTikTokProfile(accessToken) {
-  const response = await axios.get(
-    `${BASE_URL}/user/info/`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      params: {
-        fields: [
-          "open_id",
-          "display_name",
-          "avatar_url",
-          "profile_deep_link",
-          "username",
-        ].join(","),
-      },
-    }
-  );
+ */export async function getTikTokProfile(accessToken) {
+  try {
+    const response = await axios.get(
+      `${BASE_URL}/user/info/`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        params: {
+          fields: [
+            "open_id",
+            "display_name",
+            "avatar_url",
+            "profile_deep_link",
+            "username",
+          ].join(","),
+        },
+      }
+    );
 
-  return response.data.data.user;
+    return response.data.data.user;
+
+  } catch (error) {
+    console.error("=================================");
+    console.error("TIKTOK USER INFO ERROR");
+    console.error("=================================");
+
+    console.error("Status:", error.response?.status);
+    console.error(
+      "TikTok response:",
+      JSON.stringify(
+        error.response?.data,
+        null,
+        2
+      )
+    );
+
+    console.error("=================================");
+
+    throw error;
+  }
 }
