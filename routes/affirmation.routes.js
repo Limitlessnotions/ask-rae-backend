@@ -2,6 +2,7 @@ import express from "express";
 
 import {
   getDailyAffirmation,
+  getUpcomingDailyAffirmations,
 } from "../controllers/affirmation.controller.js";
 
 import {
@@ -12,15 +13,27 @@ const router =
   express.Router();
 
 /**
- * GET /api/affirmation
+ * GET /api/affirmation/daily
  *
- * Generate a personalized daily
- * affirmation for the authenticated user.
+ * Get today's personalized affirmation
+ * for the authenticated user.
  */
 router.get(
-  "/",
+  "/daily",
   verifyUser,
   getDailyAffirmation
+);
+
+/**
+ * GET /api/affirmation/upcoming
+ *
+ * Get personalized affirmations for
+ * upcoming calendar days.
+ */
+router.get(
+  "/upcoming",
+  verifyUser,
+  getUpcomingDailyAffirmations
 );
 
 export default router;
