@@ -64,8 +64,11 @@ async function getAffirmationContext(uid) {
  * for a specific date.
  *
  * previousAffirmations contains affirmations
- * that have already been generated for the
+ * already generated for earlier dates in the
  * current scheduling batch.
+ *
+ * This allows the AI to avoid producing
+ * repetitive affirmations.
  */
 async function getOrCreateAffirmation(
   uid,
@@ -94,6 +97,7 @@ async function getOrCreateAffirmation(
       date,
       affirmation:
         data?.affirmation || "",
+      created: false,
     };
   }
 
@@ -101,9 +105,10 @@ async function getOrCreateAffirmation(
    * Generate a new personalized
    * affirmation.
    *
-   * Pass the target date and all
-   * previously generated affirmations
-   * so the AI can avoid repetition.
+   * The date and previously generated
+   * affirmations are explicitly passed
+   * to the AI so that each day can have
+   * different content.
    */
   const affirmation =
     await generateDailyAffirmation({
@@ -134,6 +139,7 @@ async function getOrCreateAffirmation(
   return {
     date,
     affirmation,
+    created: true,
   };
 }
 
@@ -188,14 +194,11 @@ export async function getDailyAffirmation(
     const { uid } = req.user;
 
     /**
-     * Get the user's timezone.
+     * Get and validate the user's timezone.
      */
     const timezone =
       getRequestTimezone(req);
 
-    /**
-     * Reject invalid timezones.
-     */
     if (!timezone) {
       return res.status(400).json({
         success: false,
@@ -207,10 +210,6 @@ export async function getDailyAffirmation(
     /**
      * Determine today's calendar date
      * in the user's timezone.
-     *
-     * This is important because the
-     * backend server may be running in UTC
-     * while the user is in another timezone.
      */
     const today =
       DateTime.now()
@@ -218,14 +217,15 @@ export async function getDailyAffirmation(
         .toFormat("yyyy-MM-dd");
 
     /**
-     * Load the user's profile and memories.
+     * Load the user's profile
+     * and memories.
      */
     const context =
       await getAffirmationContext(uid);
 
     /**
-     * Get today's affirmation or create it
-     * if it does not already exist.
+     * Get today's affirmation or create
+     * it if it does not already exist.
      */
     const result =
       await getOrCreateAffirmation(
@@ -288,9 +288,8 @@ export async function getUpcomingDailyAffirmations(
     /**
      * Prevent excessive AI generation.
      *
-     * The frontend currently requests
-     * 7 days, but we cap the endpoint
-     * at 7 as an additional safeguard.
+     * Minimum: 1 day
+     * Maximum: 7 days
      */
     const days = Math.min(
       Math.max(
@@ -324,7 +323,7 @@ export async function getUpcomingDailyAffirmations(
       );
 
     /**
-     * Load the profile and memories
+     * Load the user's profile and memories
      * once rather than once per day.
      */
     const context =
@@ -333,23 +332,20 @@ export async function getUpcomingDailyAffirmations(
     const affirmations = [];
 
     /**
-     * Keep track of affirmations already
-     * generated/retrieved during this batch.
+     * Keep track of affirmations that have
+     * already been generated/retrieved in
+     * this batch.
      *
      * These are passed to the AI when creating
-     * the next day's affirmation so it can avoid
+     * the next affirmation so the AI can avoid
      * repeating the same wording, structure,
-     * message, opening phrase, or theme.
+     * message, or motivational theme.
      */
     const previousAffirmations = [];
 
     /**
      * Generate/retrieve each upcoming
      * calendar day's affirmation.
-     *
-     * Starting with today means that if
-     * today's notification hasn't already
-     * been scheduled, it can still be used.
      */
     for (
       let index = 0;
@@ -373,13 +369,17 @@ export async function getUpcomingDailyAffirmations(
           previousAffirmations
         );
 
-      affirmations.push(
-        result
-      );
+      affirmations.push({
+        date:
+          result.date,
+        affirmation:
+          result.affirmation,
+      });
 
       /**
-       * Add this affirmation to the list
-       * before generating the next day.
+       * Add the result to the list that
+       * will be supplied to the AI for
+       * the next day.
        */
       if (result.affirmation) {
         previousAffirmations.push(
