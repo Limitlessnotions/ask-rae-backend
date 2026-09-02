@@ -1,3 +1,5 @@
+import { createHash } from "crypto";
+
 import { DateTime } from "luxon";
 
 import { db } from "../firebase/firebaseAdmin.js";
@@ -11,9 +13,6 @@ import { generateDailyAffirmation } from "../services/affirmation.service.js";
  * by the affirmation service.
  */
 async function getAffirmationContext(uid) {
-  /**
-   * Load the user's profile.
-   */
   const profileDoc = await db
     .collection("users")
     .doc(uid)
@@ -23,9 +22,6 @@ async function getAffirmationContext(uid) {
     ? profileDoc.data()
     : {};
 
-  /**
-   * Build the profile context.
-   */
   const profile = {
     name:
       rawProfile.fullName ||
@@ -47,9 +43,6 @@ async function getAffirmationContext(uid) {
         : [],
   };
 
-  /**
-   * Load relevant user memories.
-   */
   const memories =
     await getMemories(uid);
 
@@ -60,85 +53,245 @@ async function getAffirmationContext(uid) {
 }
 
 /**
+ * Read the active accountability goals
+ * supplied by the authenticated frontend.
+ *
+ * The frontend obtains these from the
+ * user's existing getActiveGoals() flow.
+ */
+function getRequestActiveGoals(req) {
+  const rawGoals =
+    req.get(
+      "X-Active-Goals"
+    );
+
+  if (!rawGoals) {
+    return [];
+  }
+
+  try {
+    const parsed =
+      JSON.parse(rawGoals);
+
+    if (
+      !Array.isArray(parsed)
+    ) {
+      return [];
+    }
+
+    return parsed
+      .filter(
+        (goal) =>
+          goal &&
+          typeof goal ===
+            "object"
+      )
+      .map((goal) => ({
+        id:
+          typeof goal.id ===
+          "string"
+            ? goal.id
+            : "",
+
+        title:
+          typeof goal.title ===
+          "string"
+            ? goal.title.trim()
+            : "",
+
+        description:
+          typeof goal.description ===
+          "string"
+            ? goal.description.trim()
+            : "",
+
+        completed:
+          goal.completed === true,
+
+        createdAt:
+          typeof goal.createdAt ===
+          "string"
+            ? goal.createdAt
+            : "",
+
+        dueDate:
+          typeof goal.dueDate ===
+          "string"
+            ? goal.dueDate
+            : "",
+      }))
+      .filter(
+        (goal) =>
+          !goal.completed &&
+          (
+            goal.title ||
+            goal.description
+          )
+      );
+  } catch (error) {
+    console.error(
+      "Invalid active accountability goals header:",
+      error
+    );
+
+    return [];
+  }
+}
+
+/**
+ * Create a stable fingerprint for the
+ * current active accountability goals.
+ *
+ * This allows future cached affirmations
+ * to be regenerated automatically when
+ * the user's active goals change.
+ */
+function createGoalFingerprint(
+  activeGoals = []
+) {
+  const normalizedGoals =
+    activeGoals
+      .map((goal) => ({
+        id:
+          goal.id || "",
+
+        title:
+          goal.title || "",
+
+        description:
+          goal.description || "",
+
+        dueDate:
+          goal.dueDate || "",
+      }))
+      .sort((a, b) =>
+        `${a.id}${a.title}`.localeCompare(
+          `${b.id}${b.title}`
+        )
+      );
+
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        normalizedGoals
+      )
+    )
+    .digest("hex");
+}
+
+/**
  * Generate and save an affirmation
  * for a specific date.
  *
- * previousAffirmations contains affirmations
- * already generated for earlier dates in the
- * current scheduling batch.
- *
- * This allows the AI to avoid producing
- * repetitive affirmations.
+ * If the user's active accountability
+ * goals have changed since an affirmation
+ * was generated, the old affirmation is
+ * regenerated using the new current goals.
  */
 async function getOrCreateAffirmation(
   uid,
   date,
   context,
+  activeGoals = [],
   previousAffirmations = []
 ) {
-  const affirmationRef = db
-    .collection("users")
-    .doc(uid)
-    .collection("dailyAffirmations")
-    .doc(date);
+  const affirmationRef =
+    db
+      .collection("users")
+      .doc(uid)
+      .collection(
+        "dailyAffirmations"
+      )
+      .doc(date);
 
-  /**
-   * Check whether an affirmation already
-   * exists for this date.
-   */
   const affirmationDoc =
     await affirmationRef.get();
 
-  if (affirmationDoc.exists) {
+  const goalFingerprint =
+    createGoalFingerprint(
+      activeGoals
+    );
+
+  if (
+    affirmationDoc.exists
+  ) {
     const data =
       affirmationDoc.data();
 
-    return {
-      date,
-      affirmation:
-        data?.affirmation || "",
-      created: false,
-    };
+    const storedFingerprint =
+      data?.goalFingerprint ||
+      "";
+
+    /**
+     * Reuse the existing affirmation
+     * only when it was generated against
+     * the same current accountability
+     * goal context.
+     */
+    if (
+      storedFingerprint ===
+        goalFingerprint &&
+      data?.affirmation
+    ) {
+      return {
+        date,
+        affirmation:
+          data.affirmation,
+        created: false,
+      };
+    }
   }
 
-  /**
-   * Generate a new personalized
-   * affirmation.
-   *
-   * The date and previously generated
-   * affirmations are explicitly passed
-   * to the AI so that each day can have
-   * different content.
-   */
   const affirmation =
     await generateDailyAffirmation({
       ...context,
+
+      activeGoals,
+
       date,
+
       previousAffirmations,
     });
 
-  /**
-   * Make sure the AI returned content.
-   */
   if (!affirmation) {
     throw new Error(
       `AI returned an empty affirmation for ${date}.`
     );
   }
 
-  /**
-   * Save the affirmation using the
-   * requested date as the document ID.
-   */
   await affirmationRef.set({
     affirmation,
+
     date,
-    createdAt: new Date(),
+
+    goalFingerprint,
+
+    activeGoals:
+      activeGoals.map(
+        (goal) => ({
+          id:
+            goal.id || "",
+
+          title:
+            goal.title || "",
+
+          description:
+            goal.description || "",
+
+          dueDate:
+            goal.dueDate || "",
+        })
+      ),
+
+    createdAt:
+      new Date(),
   });
 
   return {
     date,
+
     affirmation,
+
     created: true,
   };
 }
@@ -174,71 +327,63 @@ function getRequestTimezone(req) {
  *
  * Get today's personalized affirmation
  * for the authenticated user.
- *
- * Query parameters:
- *
- * timezone
- *   IANA timezone, e.g.:
- *   America/New_York
- *   Africa/Lagos
- *   Europe/London
- *
- * If today's affirmation doesn't exist,
- * generate it and save it to Firestore.
  */
 export async function getDailyAffirmation(
   req,
   res
 ) {
   try {
-    const { uid } = req.user;
+    const { uid } =
+      req.user;
 
-    /**
-     * Get and validate the user's timezone.
-     */
     const timezone =
       getRequestTimezone(req);
 
     if (!timezone) {
       return res.status(400).json({
         success: false,
+
         message:
           "Invalid timezone.",
       });
     }
 
-    /**
-     * Determine today's calendar date
-     * in the user's timezone.
-     */
     const today =
       DateTime.now()
         .setZone(timezone)
-        .toFormat("yyyy-MM-dd");
+        .toFormat(
+          "yyyy-MM-dd"
+        );
 
-    /**
-     * Load the user's profile
-     * and memories.
-     */
     const context =
-      await getAffirmationContext(uid);
+      await getAffirmationContext(
+        uid
+      );
 
-    /**
-     * Get today's affirmation or create
-     * it if it does not already exist.
-     */
+    const activeGoals =
+      getRequestActiveGoals(
+        req
+      );
+
     const result =
       await getOrCreateAffirmation(
         uid,
+
         today,
-        context
+
+        context,
+
+        activeGoals
       );
 
     return res.json({
       success: true,
+
       affirmation:
         result.affirmation,
-      date: result.date,
+
+      date:
+        result.date,
     });
   } catch (error) {
     console.error(
@@ -248,6 +393,7 @@ export async function getDailyAffirmation(
 
     return res.status(500).json({
       success: false,
+
       message:
         "Unable to generate today's affirmation.",
     });
@@ -257,96 +403,66 @@ export async function getDailyAffirmation(
 /**
  * GET /api/affirmation/upcoming
  *
- * Generate/retrieve personalized affirmations
- * for upcoming calendar days.
- *
- * Query parameters:
- *
- * days
- *   Number of days to prepare.
- *
- * timezone
- *   IANA timezone, e.g.:
- *   America/New_York
- *   Africa/Lagos
- *   Europe/London
+ * Generate/retrieve personalized
+ * affirmations for upcoming calendar days.
  */
 export async function getUpcomingDailyAffirmations(
   req,
   res
 ) {
   try {
-    const { uid } = req.user;
+    const { uid } =
+      req.user;
 
-    /**
-     * Read and validate the requested
-     * number of days.
-     */
     const requestedDays =
-      Number(req.query.days) || 7;
+      Number(req.query.days) ||
+      7;
 
-    /**
-     * Prevent excessive AI generation.
-     *
-     * Minimum: 1 day
-     * Maximum: 7 days
-     */
-    const days = Math.min(
-      Math.max(
-        requestedDays,
-        1
-      ),
-      7
-    );
+    const days =
+      Math.min(
+        Math.max(
+          requestedDays,
+          1
+        ),
+        7
+      );
 
-    /**
-     * Get and validate the user's timezone.
-     */
     const timezone =
       getRequestTimezone(req);
 
     if (!timezone) {
       return res.status(400).json({
         success: false,
+
         message:
           "Invalid timezone.",
       });
     }
 
-    /**
-     * Get the current date in the
-     * user's timezone.
-     */
     const startDate =
       DateTime.now().setZone(
         timezone
       );
 
-    /**
-     * Load the user's profile and memories
-     * once rather than once per day.
-     */
     const context =
-      await getAffirmationContext(uid);
+      await getAffirmationContext(
+        uid
+      );
+
+    /**
+     * Get the user's current active
+     * accountability goals.
+     */
+    const activeGoals =
+      getRequestActiveGoals(
+        req
+      );
 
     const affirmations = [];
 
-    /**
-     * Keep track of affirmations that have
-     * already been generated/retrieved in
-     * this batch.
-     *
-     * These are passed to the AI when creating
-     * the next affirmation so the AI can avoid
-     * repeating the same wording, structure,
-     * message, or motivational theme.
-     */
-    const previousAffirmations = [];
+    const previousAffirmations =
+      [];
 
-    /**
-     * Generate/retrieve each upcoming
-     * calendar day's affirmation.
-     */
     for (
       let index = 0;
       index < days;
@@ -364,24 +480,27 @@ export async function getUpcomingDailyAffirmations(
       const result =
         await getOrCreateAffirmation(
           uid,
+
           date,
+
           context,
+
+          activeGoals,
+
           previousAffirmations
         );
 
       affirmations.push({
         date:
           result.date,
+
         affirmation:
           result.affirmation,
       });
 
-      /**
-       * Add the result to the list that
-       * will be supplied to the AI for
-       * the next day.
-       */
-      if (result.affirmation) {
+      if (
+        result.affirmation
+      ) {
         previousAffirmations.push(
           result.affirmation
         );
@@ -390,6 +509,7 @@ export async function getUpcomingDailyAffirmations(
 
     return res.json({
       success: true,
+
       affirmations,
     });
   } catch (error) {
@@ -400,6 +520,7 @@ export async function getUpcomingDailyAffirmations(
 
     return res.status(500).json({
       success: false,
+
       message:
         "Unable to generate upcoming affirmations.",
     });
