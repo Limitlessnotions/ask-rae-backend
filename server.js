@@ -17,6 +17,7 @@ import reminderRoutes from "./routes/reminder.routes.js";
 import calendarRoutes from "./routes/calendar.routes.js";
 import wellnessRoutes from "./routes/wellness.routes.js";
 import accountabilityRoutes from "./routes/accountability.routes.js";
+import accountRoutes from "./routes/account.routes.js";
 
 dotenv.config();
 
@@ -29,8 +30,7 @@ app.use(express.json());
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message:
-      "Ask Rae Backend is running 🚀",
+    message: "Ask Rae Backend is running 🚀",
   });
 });
 
@@ -146,6 +146,19 @@ app.use(
 app.use(
   "/api/accountability",
   accountabilityRoutes
+);
+
+/**
+ * Account
+ *
+ * DELETE /api/account
+ *
+ * Permanently deletes the authenticated
+ * user's Ask Rae account and associated data.
+ */
+app.use(
+  "/api/account",
+  accountRoutes
 );
 
 const PORT =
