@@ -1,6 +1,7 @@
 import {
   getSubscription,
   hasActiveSubscription,
+  getSubscriptionOffer,
 } from "../services/subscription/subscription.service.js";
 
 /**
@@ -30,6 +31,44 @@ export async function getMySubscription(
       success: false,
       message:
         "Unable to retrieve subscription.",
+    });
+  }
+}
+
+/**
+ * Get the subscription offer available
+ * to the current user.
+ *
+ * The first 100 users globally receive
+ * the Founding Member offer.
+ *
+ * iOS and Android share the same
+ * Firestore founding-member counter.
+ */
+export async function getMySubscriptionOffer(
+  req,
+  res
+) {
+  try {
+    const uid = req.user.uid;
+
+    const offer =
+      await getSubscriptionOffer(uid);
+
+    return res.json({
+      success: true,
+      offer,
+    });
+  } catch (error) {
+    console.error(
+      "Get subscription offer error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to determine subscription offer.",
     });
   }
 }
