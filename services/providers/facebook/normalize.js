@@ -1,16 +1,3 @@
-/*
-|--------------------------------------------------------------------------
-| Facebook Account Normalizer
-|--------------------------------------------------------------------------
-|
-| Converts Facebook's profile, token and managed Pages into
-| Ask Rae's standard social account format.
-|
-*/
-
-/**
- * Normalize a Facebook account.
- */
 export function normalizeFacebookAccount({
   profile,
   token,
@@ -19,75 +6,136 @@ export function normalizeFacebookAccount({
   const defaultPage =
     pages.length > 0 ? pages[0] : null;
 
+  /*
+  |--------------------------------------------------------------------------
+  | Facebook Page Identity
+  |--------------------------------------------------------------------------
+  |
+  | Facebook Login for Business is returning the
+  | Meta System User as /me:
+  |
+  |   Ask Rae System User
+  |
+  | But Ask Rae is actually connecting the Facebook
+  | Page for publishing.
+  |
+  | Therefore the Page becomes the displayed identity.
+  |
+  */
+
+  const pageName =
+    defaultPage?.name ??
+    "Facebook";
+
+  const pagePicture =
+    defaultPage?.picture?.data?.url ??
+    null;
+
   return {
     platform: "facebook",
 
-    platformUserId: profile.id,
+    /*
+    |--------------------------------------------------------------------------
+    | Display Identity
+    |--------------------------------------------------------------------------
+    */
 
-    displayName: profile.name ?? null,
+    platformUserId:
+      profile.id,
 
-    name: profile.name ?? null,
+    displayName:
+      pageName,
 
-    email: profile.email ?? null,
-
-    username: null,
+    name:
+      pageName,
 
     avatar:
-      profile.picture?.data?.url ?? null,
+      pagePicture,
 
-    accessToken: token.access_token,
+    email:
+      profile.email ?? null,
 
-    refreshToken: null,
-
-    expiresAt: token.expires_in
-      ? new Date(
-          Date.now() +
-            token.expires_in * 1000
-        )
-      : null,
+    username:
+      null,
 
     /*
     |--------------------------------------------------------------------------
-    | Default Publishing Target
+    | OAuth Token
+    |--------------------------------------------------------------------------
+    */
+
+    accessToken:
+      token.access_token,
+
+    refreshToken:
+      null,
+
+    expiresAt:
+      token.expires_in
+        ? new Date(
+            Date.now() +
+              token.expires_in * 1000
+          )
+        : null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Default Facebook Page
     |--------------------------------------------------------------------------
     */
 
     defaultTargetId:
-      defaultPage?.id ?? null,
+      defaultPage?.id ??
+      null,
 
     defaultTargetName:
-      defaultPage?.name ?? null,
+      pageName,
 
     /*
     |--------------------------------------------------------------------------
-    | Managed Facebook Pages
+    | Connected Facebook Pages
     |--------------------------------------------------------------------------
     */
 
     pages: pages.map((page) => ({
       id: page.id,
+
       name: page.name,
-      category: page.category ?? null,
+
+      category:
+        page.category ?? null,
 
       accessToken:
         page.access_token,
+
+      refreshToken:
+        null,
 
       picture:
         page.picture?.data?.url ??
         null,
 
-      tasks: page.tasks ?? [],
+      tasks:
+        page.tasks ?? [],
     })),
 
     /*
     |--------------------------------------------------------------------------
-    | Metadata
+    | Connection Metadata
     |--------------------------------------------------------------------------
     */
 
-    connectedAt: new Date(),
+    connectedAt:
+      new Date(),
 
-    updatedAt: new Date(),
+    updatedAt:
+      new Date(),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Raw Facebook Data
+    |--------------------------------------------------------------------------
+    */
 
     raw: {
       profile,
