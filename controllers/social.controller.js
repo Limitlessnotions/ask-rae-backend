@@ -29,21 +29,12 @@ export const getAccounts = async (req, res) => {
       const platform = doc.id;
       const data = doc.data();
 
-      if (!accounts.hasOwnProperty(platform)) {
-        accounts[platform] = data;
-        return;
-      }
-
       /*
       |--------------------------------------------------------------------------
       | Facebook
       |--------------------------------------------------------------------------
-      | The Facebook OAuth token is a System User token, so profile.name
-      | can be "Ask Rae System User".
-      |
-      | The actual publishing destination is the Facebook Page.
-      | Therefore use the Page identity for the connected-account display.
       */
+
       if (platform === "facebook") {
         const pages = Array.isArray(data.pages)
           ? data.pages
@@ -51,6 +42,7 @@ export const getAccounts = async (req, res) => {
 
         let defaultPage = null;
 
+        // First try the explicitly configured publishing target.
         if (data.defaultTargetId) {
           defaultPage =
             pages.find(
@@ -59,47 +51,91 @@ export const getAccounts = async (req, res) => {
             ) ?? null;
         }
 
+        // Fall back to the first available Page.
         if (!defaultPage && pages.length > 0) {
           defaultPage = pages[0];
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Use the Facebook Page identity
+        |--------------------------------------------------------------------------
+        |
+        | Facebook Login for Business is returning:
+        |
+        |   profile.name = "Ask Rae System User"
+        |
+        | That is NOT what we want to display in the app.
+        |
+        | The Page returned by /me/accounts contains the actual
+        | publishing destination and its public identity.
+        |
+        */
+
         accounts.facebook = {
           ...data,
 
-          // Use Facebook Page identity instead of System User identity.
           displayName:
-            defaultPage?.name ??
-            data.defaultTargetName ??
+            defaultPage?.name ||
+            data.defaultTargetName ||
             "Facebook",
 
           name:
-            defaultPage?.name ??
-            data.defaultTargetName ??
+            defaultPage?.name ||
+            data.defaultTargetName ||
             "Facebook",
 
-          // Make the Page image available to the frontend.
           avatar:
-            defaultPage?.picture ??
-            data.avatar ??
+            defaultPage?.picture ||
+            data.avatar ||
             null,
 
-          // Preserve the actual publishing target.
           defaultTargetId:
-            defaultPage?.id ??
-            data.defaultTargetId ??
+            defaultPage?.id ||
+            data.defaultTargetId ||
             null,
 
           defaultTargetName:
-            defaultPage?.name ??
-            data.defaultTargetName ??
+            defaultPage?.name ||
+            data.defaultTargetName ||
             null,
         };
 
         return;
       }
 
+      /*
+      |--------------------------------------------------------------------------
+      | Other platforms
+      |--------------------------------------------------------------------------
+      */
+
       accounts[platform] = data;
     });
+
+    /*
+    |--------------------------------------------------------------------------
+    | FINAL RESPONSE DEBUG
+    |--------------------------------------------------------------------------
+    */
+
+    console.log(
+      "=========================================="
+    );
+    console.log(
+      "GET CONNECTED SOCIAL ACCOUNTS"
+    );
+    console.log(
+      "=========================================="
+    );
+
+    console.dir(accounts, {
+      depth: null,
+    });
+
+    console.log(
+      "=========================================="
+    );
 
     return res.status(200).json({
       success: true,
@@ -242,7 +278,8 @@ export const publishSocialContent = async (
       });
     }
 
-    const social = socialSnapshot.data();
+    const social =
+      socialSnapshot.data();
 
     /*
     |--------------------------------------------------------------------------
