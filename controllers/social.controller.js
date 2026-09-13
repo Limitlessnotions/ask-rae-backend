@@ -3,6 +3,125 @@ import { getUserPages } from "../services/facebook.service.js";
 import { publishContent } from "../services/social.service.js";
 
 /**
+ * Get all connected social accounts
+ *
+ * For Facebook, the connected identity displayed to the user
+ * is the Facebook Page rather than the Meta System User.
+ */
+export const getAccounts = async (req, res) => {
+  try {
+    const { uid } = req.user;
+
+    const snapshot = await db
+      .collection("users")
+      .doc(uid)
+      .collection("socialAccounts")
+      .get();
+
+    const accounts = {
+      facebook: null,
+      instagram: null,
+      tiktok: null,
+      x: null,
+    };
+
+    snapshot.forEach((doc) => {
+      const platform = doc.id;
+      const data = doc.data();
+
+      if (!accounts.hasOwnProperty(platform)) {
+        accounts[platform] = data;
+        return;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Facebook
+      |--------------------------------------------------------------------------
+      | The Facebook OAuth token is a System User token, so profile.name
+      | can be "Ask Rae System User".
+      |
+      | The actual publishing destination is the Facebook Page.
+      | Therefore use the Page identity for the connected-account display.
+      */
+      if (platform === "facebook") {
+        const pages = Array.isArray(data.pages)
+          ? data.pages
+          : [];
+
+        let defaultPage = null;
+
+        if (data.defaultTargetId) {
+          defaultPage =
+            pages.find(
+              (page) =>
+                page.id === data.defaultTargetId
+            ) ?? null;
+        }
+
+        if (!defaultPage && pages.length > 0) {
+          defaultPage = pages[0];
+        }
+
+        accounts.facebook = {
+          ...data,
+
+          // Use Facebook Page identity instead of System User identity.
+          displayName:
+            defaultPage?.name ??
+            data.defaultTargetName ??
+            "Facebook",
+
+          name:
+            defaultPage?.name ??
+            data.defaultTargetName ??
+            "Facebook",
+
+          // Make the Page image available to the frontend.
+          avatar:
+            defaultPage?.picture ??
+            data.avatar ??
+            null,
+
+          // Preserve the actual publishing target.
+          defaultTargetId:
+            defaultPage?.id ??
+            data.defaultTargetId ??
+            null,
+
+          defaultTargetName:
+            defaultPage?.name ??
+            data.defaultTargetName ??
+            null,
+        };
+
+        return;
+      }
+
+      accounts[platform] = data;
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: accounts,
+    });
+  } catch (error) {
+    console.error(
+      "Get Connected Social Accounts Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.response?.data?.error?.message ||
+        error.message ||
+        "Unable to load connected social accounts.",
+    });
+  }
+};
+
+/**
  * Get all Facebook Pages connected to the current user
  */
 export const getFacebookPages = async (req, res) => {
@@ -25,27 +144,33 @@ export const getFacebookPages = async (req, res) => {
 
     const social = socialDoc.data();
 
-    const pages = await getUserPages(social.accessToken);
+    const pages = await getUserPages(
+      social.accessToken
+    );
 
     const normalizedPages = pages.map((page) => ({
       id: page.id,
       name: page.name,
       category: page.category ?? null,
       accessToken: page.access_token,
-      picture: page.picture?.data?.url ?? null,
+      picture:
+        page.picture?.data?.url ?? null,
       tasks: page.tasks ?? [],
     }));
 
     await socialDoc.ref.update({
       pages: normalizedPages,
+
       defaultTargetId:
         social.defaultTargetId ??
         normalizedPages[0]?.id ??
         null,
+
       defaultTargetName:
         social.defaultTargetName ??
         normalizedPages[0]?.name ??
         null,
+
       lastSynced: new Date(),
     });
 
@@ -53,7 +178,6 @@ export const getFacebookPages = async (req, res) => {
       success: true,
       pages: normalizedPages,
     });
-
   } catch (error) {
     console.error(
       "Get Facebook Pages Error:",
@@ -72,7 +196,10 @@ export const getFacebookPages = async (req, res) => {
 /**
  * Universal Social Publisher
  */
-export const publishSocialContent = async (req, res) => {
+export const publishSocialContent = async (
+  req,
+  res
+) => {
   const { uid } = req.user;
 
   try {
@@ -110,7 +237,8 @@ export const publishSocialContent = async (req, res) => {
     if (!socialSnapshot.exists) {
       return res.status(404).json({
         success: false,
-        message: `${platform} account not connected.`,
+        message:
+          `${platform} account not connected.`,
       });
     }
 
@@ -140,14 +268,17 @@ export const publishSocialContent = async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    let accessToken = social.accessToken;
+    let accessToken =
+      social.accessToken;
+
     let targetName =
       social.defaultTargetName;
 
     if (platform === "facebook") {
-      const page = social.pages?.find(
-        (p) => p.id === targetId
-      );
+      const page =
+        social.pages?.find(
+          (p) => p.id === targetId
+        );
 
       if (!page) {
         return res.status(404).json({
@@ -157,8 +288,11 @@ export const publishSocialContent = async (req, res) => {
         });
       }
 
-      accessToken = page.accessToken;
-      targetName = page.name;
+      accessToken =
+        page.accessToken;
+
+      targetName =
+        page.name;
     }
 
     /*
@@ -202,7 +336,6 @@ export const publishSocialContent = async (req, res) => {
         "Content published successfully.",
       result,
     });
-
   } catch (error) {
     console.error(
       "Publish Content Error:",
@@ -217,68 +350,30 @@ export const publishSocialContent = async (req, res) => {
         .add({
           platform:
             req.body.platform ?? null,
+
           targetId:
             req.body.targetId ?? null,
+
           type:
             req.body.content?.type ??
             null,
+
           content:
             req.body.content ?? null,
+
           status: "failed",
-          error: error.message,
-          createdAt: new Date(),
+
+          error:
+            error.message,
+
+          createdAt:
+            new Date(),
         });
-
-    } catch (error) {
-  console.log("==========================================");
-  console.log("FACEBOOK PUBLISH ERROR");
-  console.log("==========================================");
-
-  console.log("Message:");
-  console.log(error.message);
-
-  console.log("Status:");
-  console.log(error.response?.status);
-
-  console.log("Facebook Response:");
-  console.dir(error.response?.data, {
-    depth: null,
-  });
-
-  console.log("Stack:");
-  console.log(error.stack);
-
-  console.log("==========================================");
-
-  try {
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("publishedContent")
-      .add({
-        platform: req.body.platform ?? null,
-        targetId: req.body.targetId ?? null,
-        type: req.body.content?.type ?? null,
-        content: req.body.content ?? null,
-        status: "failed",
-        error: error.message,
-        createdAt: new Date(),
-      });
-
-  } catch (logError) {
-    console.error(
-      "Failed to log publish error:",
-      logError
-    );
-  }
-
-  return res.status(500).json({
-    success: false,
-    message:
-      error.response?.data?.error?.message ||
-      error.message,
-  });
-
+    } catch (logError) {
+      console.error(
+        "Failed to log publish error:",
+        logError
+      );
     }
 
     return res.status(500).json({
