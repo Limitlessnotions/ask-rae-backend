@@ -3,15 +3,17 @@
 | Instagram OAuth Provider
 |--------------------------------------------------------------------------
 |
-| Handles Instagram Business OAuth operations.
+| Handles Instagram Login OAuth operations.
+|
+| This provider uses Instagram Login directly.
+| It does not use Facebook Pages.
 |
 */
 
 import {
   getInstagramLoginUrl,
   exchangeCodeForToken,
-  getUserPages,
-  getInstagramBusinessAccount,
+  exchangeForLongLivedToken,
   getInstagramProfile,
 } from "../../instagram.service.js";
 
@@ -25,94 +27,115 @@ export function buildAuthorizationUrl({ state }) {
 }
 
 /**
- * Connect an Instagram Business account
+ * Connect an Instagram account
  */
 export async function connectAccount(code) {
   console.log("=================================");
   console.log("INSTAGRAM CONNECT ACCOUNT");
   console.log("=================================");
 
-  console.log("Step 1: Exchanging authorization code...");
+  /*
+  |--------------------------------------------------------------------------
+  | Step 1: Exchange authorization code
+  |--------------------------------------------------------------------------
+  */
 
-  const token = await exchangeCodeForToken(code);
+  console.log(
+    "Step 1: Exchanging Instagram authorization code..."
+  );
 
-  console.log("✅ Access token received");
+  const shortLivedToken =
+    await exchangeCodeForToken(code);
 
-  console.log("Step 2: Loading Facebook Pages...");
+  console.log(
+    "✅ Instagram access token received"
+  );
 
-  const pages = await getUserPages(token.access_token);
+  console.log(
+    "Instagram user ID:",
+    shortLivedToken.user_id
+  );
 
-  console.log(`✅ Found ${pages.length} page(s)`);
+  /*
+  |--------------------------------------------------------------------------
+  | Step 2: Exchange for long-lived token
+  |--------------------------------------------------------------------------
+  */
 
-  if (!pages.length) {
-    throw new Error(
-      "No Facebook Pages found for this account."
+  console.log(
+    "Step 2: Exchanging for long-lived Instagram token..."
+  );
+
+  const longLivedToken =
+    await exchangeForLongLivedToken(
+      shortLivedToken.access_token
     );
-  }
 
-  console.log("Step 3: Looking for connected Instagram Business account...");
+  console.log(
+    "✅ Long-lived Instagram token received"
+  );
 
-  let instagramPage = null;
+  /*
+  |--------------------------------------------------------------------------
+  | Step 3: Load Instagram profile
+  |--------------------------------------------------------------------------
+  */
 
-  for (const page of pages) {
-    console.log(`Checking page: ${page.name}`);
-
-    const pageDetails =
-      await getInstagramBusinessAccount(
-        page.id,
-        token.access_token
-      );
-
-    console.log(pageDetails);
-
-    if (pageDetails.instagram_business_account) {
-      instagramPage = {
-        page,
-        instagram:
-          pageDetails.instagram_business_account,
-      };
-
-      break;
-    }
-  }
-
-  if (!instagramPage) {
-    throw new Error(
-      "No Instagram Business account is connected to any Facebook Page."
-    );
-  }
-
-  console.log("✅ Instagram Business account found");
-
-  console.log("Step 4: Loading Instagram profile...");
+  console.log(
+    "Step 3: Loading Instagram profile..."
+  );
 
   const profile =
     await getInstagramProfile(
-      instagramPage.instagram.id,
-      token.access_token
+      longLivedToken.access_token
     );
 
-  console.log("✅ Instagram profile loaded");
+  console.log(
+    "✅ Instagram profile loaded"
+  );
+
   console.log(profile);
 
-  console.log("Step 5: Normalizing account...");
+  /*
+  |--------------------------------------------------------------------------
+  | Step 4: Normalize account
+  |--------------------------------------------------------------------------
+  */
 
-  const account = normalizeInstagramAccount({
-    profile,
-    token,
-    page: instagramPage.page,
-  });
+  console.log(
+    "Step 4: Normalizing Instagram account..."
+  );
 
-  console.log("✅ Instagram account normalized");
+  const account =
+    normalizeInstagramAccount({
+      profile,
+      token: longLivedToken,
+    });
+
+  console.log(
+    "✅ Instagram account normalized"
+  );
+
+  console.log(
+    "Instagram username:",
+    account.username
+  );
+
+  console.log(
+    "Instagram account ID:",
+    account.platformUserId
+  );
+
+  console.log("=================================");
 
   return account;
 }
 
 /**
- * Refresh token
+ * Refresh Instagram access token
  */
 export async function refreshAccessToken() {
   throw new Error(
-    "Instagram refresh token not implemented."
+    "Instagram token refresh not implemented."
   );
 }

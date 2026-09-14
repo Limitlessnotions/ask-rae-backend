@@ -3,7 +3,7 @@
 | Instagram Account Normalizer
 |--------------------------------------------------------------------------
 |
-| Converts Instagram's Graph API response into
+| Converts Instagram Login's Graph API response into
 | Ask Rae's standard social account format.
 |
 */
@@ -14,36 +14,49 @@
 export function normalizeInstagramAccount({
   profile,
   token,
-  page,
 }) {
   return {
     platform: "instagram",
 
-    platformUserId: profile.id,
+    platformUserId:
+      profile.id,
 
-    username: profile.username ?? null,
+    username:
+      profile.username ?? null,
 
-    name: page?.name ?? null,
+    name:
+      profile.name ??
+      profile.username ??
+      null,
 
     email: null,
 
-    avatar: profile.profile_picture_url ?? null,
+    avatar:
+      profile.profile_picture_url ??
+      null,
 
-    accessToken: token.access_token,
+    accessToken:
+      token.access_token,
 
-    refreshToken: null,
+    refreshToken:
+      null,
 
-    expiresAt: token.expires_in
-      ? new Date(
-          Date.now() + token.expires_in * 1000
-        )
-      : null,
+    expiresAt:
+      token.expires_in
+        ? new Date(
+            Date.now() +
+              token.expires_in * 1000
+          )
+        : null,
 
-    pageId: page?.id ?? null,
+    pageId:
+      null,
 
-    pageName: page?.name ?? null,
+    pageName:
+      null,
 
-    instagramBusinessId: profile.id,
+    instagramBusinessId:
+      profile.id,
 
     followersCount:
       profile.followers_count ?? 0,
@@ -53,7 +66,6 @@ export function normalizeInstagramAccount({
 
     raw: {
       profile,
-      page,
       token,
     },
   };

@@ -1,61 +1,47 @@
 import axios from "axios";
 import { getInstagramConfig } from "../config/instagram.config.js";
 
-const GRAPH_URL = "https://graph.facebook.com/v23.0";
+const INSTAGRAM_GRAPH_URL = "https://graph.instagram.com";
+
+const INSTAGRAM_OAUTH_URL = "https://www.instagram.com/oauth/authorize";
+
+const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
 
 /**
- * Build Instagram OAuth Login URL
+ * Build Instagram Login authorization URL.
  *
- * Instagram Business authentication uses Facebook Login
- * and redirects back to the Instagram callback.
+ * This uses Instagram Login directly.
+ *
+ * It does NOT use:
+ * https://www.facebook.com/dialog/oauth
+ *
+ * It also does NOT use Facebook Page discovery.
  */
 export function getInstagramLoginUrl(state) {
   const INSTAGRAM_CONFIG = getInstagramConfig();
 
   const scopes = [
-    "public_profile",
-
-    // Required to discover the user's Facebook Pages.
-    "pages_show_list",
-
-    // Required for Page/Instagram account access.
-    "pages_read_engagement",
-
-    // Required for Facebook Page publishing.
-    "pages_manage_posts",
-
-    // Instagram Business account access.
     "instagram_business_basic",
-
-    // Instagram publishing.
     "instagram_business_content_publish",
   ];
 
   const params = new URLSearchParams({
-    client_id:
-      INSTAGRAM_CONFIG.appId,
-
-    redirect_uri:
-      INSTAGRAM_CONFIG.redirectUri,
-
-    scope:
-      scopes.join(","),
-
-    response_type:
-      "code",
-
+    client_id: INSTAGRAM_CONFIG.appId,
+    redirect_uri: INSTAGRAM_CONFIG.redirectUri,
+    response_type: "code",
+    scope: scopes.join(","),
     state,
   });
 
   const url =
-    `https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`;
+    `${INSTAGRAM_OAUTH_URL}?${params.toString()}`;
 
   console.log("=================================");
-  console.log("Instagram OAuth Configuration");
+  console.log("Instagram Login Configuration");
   console.log("=================================");
 
   console.log(
-    "APP ID:",
+    "INSTAGRAM APP ID:",
     INSTAGRAM_CONFIG.appId
   );
 
@@ -74,36 +60,59 @@ export function getInstagramLoginUrl(state) {
     scopes.join(",")
   );
 
-  console.log("=================================");
+  console.log("OAUTH URL:");
   console.log(url);
+
   console.log("=================================");
 
   return url;
 }
 
 /**
- * Exchange authorization code for access token
+ * Exchange Instagram authorization code
+ * for an Instagram access token.
+ *
+ * Instagram Login uses:
+ *
+ * POST https://api.instagram.com/oauth/access_token
  */
-export async function exchangeCodeForToken(
-  code
-) {
-  const INSTAGRAM_CONFIG =
-    getInstagramConfig();
+export async function exchangeCodeForToken(code) {
+  const INSTAGRAM_CONFIG = getInstagramConfig();
 
-  const response = await axios.get(
-    `${GRAPH_URL}/oauth/access_token`,
+  const formData = new URLSearchParams();
+
+  formData.append(
+    "client_id",
+    INSTAGRAM_CONFIG.appId
+  );
+
+  formData.append(
+    "client_secret",
+    INSTAGRAM_CONFIG.appSecret
+  );
+
+  formData.append(
+    "grant_type",
+    "authorization_code"
+  );
+
+  formData.append(
+    "redirect_uri",
+    INSTAGRAM_CONFIG.redirectUri
+  );
+
+  formData.append(
+    "code",
+    code
+  );
+
+  const response = await axios.post(
+    INSTAGRAM_TOKEN_URL,
+    formData.toString(),
     {
-      params: {
-        client_id:
-          INSTAGRAM_CONFIG.appId,
-
-        client_secret:
-          INSTAGRAM_CONFIG.appSecret,
-
-        redirect_uri:
-          INSTAGRAM_CONFIG.redirectUri,
-
-        code,
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded",
       },
     }
   );
@@ -112,7 +121,34 @@ export async function exchangeCodeForToken(
 }
 
 /**
- * Generic Graph API GET helper
+ * Exchange the short-lived Instagram token
+ * for a long-lived Instagram token.
+ */
+export async function exchangeForLongLivedToken(
+  accessToken
+) {
+  const INSTAGRAM_CONFIG = getInstagramConfig();
+
+  const response = await axios.get(
+    `${INSTAGRAM_GRAPH_URL}/access_token`,
+    {
+      params: {
+        grant_type: "ig_exchange_token",
+
+        client_secret:
+          INSTAGRAM_CONFIG.appSecret,
+
+        access_token:
+          accessToken,
+      },
+    }
+  );
+
+  return response.data;
+}
+
+/**
+ * Generic Instagram Graph API GET helper.
  */
 export async function graphGet(
   endpoint,
@@ -120,13 +156,13 @@ export async function graphGet(
   params = {}
 ) {
   const response = await axios.get(
-    `${GRAPH_URL}${endpoint}`,
+    `${INSTAGRAM_GRAPH_URL}${endpoint}`,
     {
       params: {
+        ...params,
+
         access_token:
           accessToken,
-
-        ...params,
       },
     }
   );
@@ -135,56 +171,19 @@ export async function graphGet(
 }
 
 /**
- * Get all Facebook Pages managed by the user.
- */
-export async function getUserPages(
-  accessToken
-) {
-  const data =
-    await graphGet(
-      "/me/accounts",
-      accessToken,
-      {
-        fields:
-          "id,name,access_token,category,tasks,picture{url}",
-      }
-    );
-
-  return data.data;
-}
-
-/**
- * Get the Instagram Business account attached
- * to a Facebook Page.
- */
-export async function getInstagramBusinessAccount(
-  pageId,
-  accessToken
-) {
-  return await graphGet(
-    `/${pageId}`,
-    accessToken,
-    {
-      fields:
-        "id,name,instagram_business_account",
-    }
-  );
-}
-
-/**
- * Get Instagram Business Profile
+ * Get the authenticated Instagram account.
  */
 export async function getInstagramProfile(
-  instagramBusinessId,
   accessToken
 ) {
   return await graphGet(
-    `/${instagramBusinessId}`,
+    "/me",
     accessToken,
     {
       fields: [
         "id",
         "username",
+        "name",
         "profile_picture_url",
         "followers_count",
         "media_count",
