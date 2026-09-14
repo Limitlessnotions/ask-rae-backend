@@ -7,7 +7,7 @@ const GRAPH_URL = "https://graph.facebook.com/v23.0";
  * Build Instagram OAuth Login URL
  *
  * Instagram Business authentication uses Facebook Login
- * but redirects back to the Instagram callback.
+ * and redirects back to the Instagram callback.
  */
 export function getInstagramLoginUrl(state) {
   const INSTAGRAM_CONFIG = getInstagramConfig();
@@ -15,25 +15,55 @@ export function getInstagramLoginUrl(state) {
   const params = new URLSearchParams({
     client_id: INSTAGRAM_CONFIG.appId,
     redirect_uri: INSTAGRAM_CONFIG.redirectUri,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Instagram / Facebook permissions
+    |--------------------------------------------------------------------------
+    |
+    | Do NOT request "email".
+    | Meta rejects "email" for this Instagram connection flow.
+    |
+    */
+
     scope: [
       "public_profile",
-      "email",
       "pages_show_list",
       "pages_read_engagement",
       "pages_manage_posts",
     ].join(","),
+
     response_type: "code",
     state,
   });
 
-  const url = `https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`;
+  const url =
+    `https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`;
 
   console.log("=================================");
   console.log("Instagram OAuth Configuration");
   console.log("=================================");
-  console.log("APP ID:", INSTAGRAM_CONFIG.appId);
-  console.log("REDIRECT URI:", INSTAGRAM_CONFIG.redirectUri);
-  console.log("STATE:", state);
+  console.log(
+    "APP ID:",
+    INSTAGRAM_CONFIG.appId
+  );
+  console.log(
+    "REDIRECT URI:",
+    INSTAGRAM_CONFIG.redirectUri
+  );
+  console.log(
+    "STATE:",
+    state
+  );
+  console.log(
+    "SCOPES:",
+    [
+      "public_profile",
+      "pages_show_list",
+      "pages_read_engagement",
+      "pages_manage_posts",
+    ].join(",")
+  );
   console.log("=================================");
   console.log(url);
   console.log("=================================");
@@ -45,15 +75,22 @@ export function getInstagramLoginUrl(state) {
  * Exchange authorization code for access token
  */
 export async function exchangeCodeForToken(code) {
-  const INSTAGRAM_CONFIG = getInstagramConfig();
+  const INSTAGRAM_CONFIG =
+    getInstagramConfig();
 
   const response = await axios.get(
     `${GRAPH_URL}/oauth/access_token`,
     {
       params: {
-        client_id: INSTAGRAM_CONFIG.appId,
-        client_secret: INSTAGRAM_CONFIG.appSecret,
-        redirect_uri: INSTAGRAM_CONFIG.redirectUri,
+        client_id:
+          INSTAGRAM_CONFIG.appId,
+
+        client_secret:
+          INSTAGRAM_CONFIG.appSecret,
+
+        redirect_uri:
+          INSTAGRAM_CONFIG.redirectUri,
+
         code,
       },
     }
@@ -86,7 +123,9 @@ export async function graphGet(
 /**
  * Get all Facebook Pages managed by the user.
  */
-export async function getUserPages(accessToken) {
+export async function getUserPages(
+  accessToken
+) {
   const data = await graphGet(
     "/me/accounts",
     accessToken,
@@ -100,7 +139,8 @@ export async function getUserPages(accessToken) {
 }
 
 /**
- * Get the Instagram Business account attached to a Facebook Page.
+ * Get the Instagram Business account attached
+ * to a Facebook Page.
  */
 export async function getInstagramBusinessAccount(
   pageId,
@@ -110,7 +150,8 @@ export async function getInstagramBusinessAccount(
     `/${pageId}`,
     accessToken,
     {
-      fields: "id,name,instagram_business_account",
+      fields:
+        "id,name,instagram_business_account",
     }
   );
 }
