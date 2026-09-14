@@ -34,28 +34,66 @@ const CONTAINER_POLL_INTERVAL = 2000;
 
 const CONTAINER_MAX_ATTEMPTS = 30;
 
+/*
+|--------------------------------------------------------------------------
+| Content extraction helpers
+|--------------------------------------------------------------------------
+*/
+
 /**
  * Extract a caption from the content object.
  */
 function getCaption(content) {
   return (
-    content.caption ??
-    content.text ??
-    content.body ??
+    content?.caption ??
+    content?.text ??
+    content?.body ??
+    content?.description ??
     ""
   );
+}
+
+/**
+ * Extract a media object when Ask Rae sends
+ * media as a nested object.
+ */
+function getNestedMedia(content) {
+  if (
+    content?.media &&
+    typeof content.media === "object"
+  ) {
+    return content.media;
+  }
+
+  return null;
 }
 
 /**
  * Extract a publicly accessible image URL.
  */
 function getImageUrl(content) {
+  const media = getNestedMedia(content);
+
+  const image =
+    content?.image &&
+    typeof content.image === "object"
+      ? content.image
+      : null;
+
   return (
-    content.imageUrl ??
-    content.image_url ??
-    content.mediaUrl ??
-    content.media_url ??
-    content.url ??
+    content?.imageUrl ??
+    content?.image_url ??
+    content?.mediaUrl ??
+    content?.media_url ??
+    content?.url ??
+    media?.imageUrl ??
+    media?.image_url ??
+    media?.mediaUrl ??
+    media?.media_url ??
+    media?.url ??
+    media?.uri ??
+    image?.url ??
+    image?.uri ??
     null
   );
 }
@@ -64,45 +102,225 @@ function getImageUrl(content) {
  * Extract a publicly accessible video URL.
  */
 function getVideoUrl(content) {
+  const media = getNestedMedia(content);
+
+  const video =
+    content?.video &&
+    typeof content.video === "object"
+      ? content.video
+      : null;
+
   return (
-    content.videoUrl ??
-    content.video_url ??
-    content.mediaUrl ??
-    content.media_url ??
-    content.url ??
+    content?.videoUrl ??
+    content?.video_url ??
+    content?.mediaUrl ??
+    content?.media_url ??
+    content?.url ??
+    media?.videoUrl ??
+    media?.video_url ??
+    media?.mediaUrl ??
+    media?.media_url ??
+    media?.url ??
+    media?.uri ??
+    video?.url ??
+    video?.uri ??
     null
   );
 }
 
 /**
+ * Determine whether a URL looks like a video.
+ */
+function urlLooksLikeVideo(url) {
+  if (
+    typeof url !== "string" ||
+    !url
+  ) {
+    return false;
+  }
+
+  const cleanUrl = url
+    .split("?")[0]
+    .split("#")[0]
+    .toLowerCase();
+
+  return /\.(mp4|mov|m4v|avi|webm)$/i.test(
+    cleanUrl
+  );
+}
+
+/**
+ * Determine whether a URL looks like an image.
+ */
+function urlLooksLikeImage(url) {
+  if (
+    typeof url !== "string" ||
+    !url
+  ) {
+    return false;
+  }
+
+  const cleanUrl = url
+    .split("?")[0]
+    .split("#")[0]
+    .toLowerCase();
+
+  return /\.(jpg|jpeg|png|webp|gif)$/i.test(
+    cleanUrl
+  );
+}
+
+/**
  * Determine the Instagram media type.
+ *
+ * Returns:
+ *
+ *   IMAGE
+ *   REELS
  */
 function getMediaType(content) {
-  const type =
-    String(
-      content.type ??
-      content.mediaType ??
-      content.media_type ??
+  const explicitType = String(
+    content?.mediaType ??
+      content?.media_type ??
+      content?.media?.type ??
+      content?.media?.mediaType ??
+      content?.media?.media_type ??
+      content?.type ??
       ""
-    ).toLowerCase();
+  ).toLowerCase();
+
+  /*
+  |--------------------------------------------------------------------------
+  | Explicit video types
+  |--------------------------------------------------------------------------
+  */
 
   if (
-    type === "reel" ||
-    type === "reels" ||
-    type === "video"
+    explicitType === "reel" ||
+    explicitType === "reels" ||
+    explicitType === "video" ||
+    explicitType === "mp4" ||
+    explicitType === "mov"
   ) {
     return "REELS";
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | Explicit carousel types
+  |--------------------------------------------------------------------------
+  */
+
   if (
-    type === "carousel" ||
-    type === "carousel_album"
+    explicitType === "carousel" ||
+    explicitType === "carousel_album"
   ) {
     return "CAROUSEL";
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | Generic "media"
+  |--------------------------------------------------------------------------
+  |
+  | Ask Rae may send:
+  |
+  |   type: "media"
+  |
+  | In that case, inspect the URL and nested
+  | media object to determine image/video.
+  |
+  */
+
+  if (explicitType === "media") {
+    const videoUrl =
+      getVideoUrl(content);
+
+    if (
+      content?.media?.type &&
+      ["video", "reel", "reels"].includes(
+        String(content.media.type).toLowerCase()
+      )
+    ) {
+      return "REELS";
+    }
+
+    if (urlLooksLikeVideo(videoUrl)) {
+      return "REELS";
+    }
+
+    return "IMAGE";
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Text with media
+  |--------------------------------------------------------------------------
+  |
+  | If the payload says "text" but contains a
+  | media URL, treat it as media instead of
+  | attempting a text-only Instagram post.
+  |
+  */
+
+  if (explicitType === "text") {
+    const videoUrl =
+      getVideoUrl(content);
+
+    const imageUrl =
+      getImageUrl(content);
+
+    if (urlLooksLikeVideo(videoUrl)) {
+      return "REELS";
+    }
+
+    if (imageUrl || videoUrl) {
+      return "IMAGE";
+    }
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Direct URL detection
+  |--------------------------------------------------------------------------
+  */
+
+  const videoUrl =
+    getVideoUrl(content);
+
+  if (urlLooksLikeVideo(videoUrl)) {
+    return "REELS";
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Default
+  |--------------------------------------------------------------------------
+  |
+  | Instagram publishing requires media.
+  | Default to IMAGE because Ask Rae's
+  | generated social posts are normally images.
+  |
+  */
+
   return "IMAGE";
 }
+
+/**
+ * Determine whether the payload actually contains media.
+ */
+function hasMedia(content) {
+  return Boolean(
+    getImageUrl(content) ||
+    getVideoUrl(content)
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Instagram Graph API
+|--------------------------------------------------------------------------
+*/
 
 /**
  * Make a request to the Instagram Graph API.
@@ -136,11 +354,42 @@ async function graphRequest({
     config.data = data;
   }
 
-  const response =
-    await axios(config);
+  try {
+    const response =
+      await axios(config);
 
-  return response.data;
+    return response.data;
+  } catch (error) {
+    const apiError =
+      error?.response?.data;
+
+    console.error(
+      "Instagram Graph API Error:",
+      JSON.stringify(
+        apiError ??
+          error?.message ??
+          error,
+        null,
+        2
+      )
+    );
+
+    const message =
+      apiError?.error?.message ??
+      error?.message ??
+      "Instagram Graph API request failed.";
+
+    throw new Error(
+      `Instagram API error: ${message}`
+    );
+  }
 }
+
+/*
+|--------------------------------------------------------------------------
+| Media container
+|--------------------------------------------------------------------------
+*/
 
 /**
  * Create an Instagram media container.
@@ -156,6 +405,20 @@ async function createMediaContainer({
   const caption =
     getCaption(content);
 
+  console.log("=================================");
+  console.log(
+    "INSTAGRAM MEDIA CONTAINER"
+  );
+  console.log("=================================");
+  console.log(
+    "Detected media type:",
+    mediaType
+  );
+  console.log(
+    "Caption available:",
+    Boolean(caption)
+  );
+
   /*
   |--------------------------------------------------------------------------
   | IMAGE
@@ -165,6 +428,11 @@ async function createMediaContainer({
   if (mediaType === "IMAGE") {
     const imageUrl =
       getImageUrl(content);
+
+    console.log(
+      "Instagram image URL:",
+      imageUrl
+    );
 
     if (!imageUrl) {
       throw new Error(
@@ -177,7 +445,8 @@ async function createMediaContainer({
     };
 
     if (caption) {
-      params.caption = caption;
+      params.caption =
+        caption;
     }
 
     console.log(
@@ -220,6 +489,11 @@ async function createMediaContainer({
     const videoUrl =
       getVideoUrl(content);
 
+    console.log(
+      "Instagram video URL:",
+      videoUrl
+    );
+
     if (!videoUrl) {
       throw new Error(
         "Instagram Reel publishing requires a publicly accessible video URL."
@@ -232,13 +506,14 @@ async function createMediaContainer({
       video_url: videoUrl,
 
       share_to_feed:
-        content.shareToFeed ??
-        content.share_to_feed ??
+        content?.shareToFeed ??
+        content?.share_to_feed ??
         true,
     };
 
     if (caption) {
-      params.caption = caption;
+      params.caption =
+        caption;
     }
 
     console.log(
@@ -271,10 +546,33 @@ async function createMediaContainer({
     return result;
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | CAROUSEL
+  |--------------------------------------------------------------------------
+  |
+  | Carousel publishing requires multiple child
+  | containers and is intentionally not handled
+  | by this publisher yet.
+  |
+  */
+
+  if (mediaType === "CAROUSEL") {
+    throw new Error(
+      "Instagram carousel publishing is not currently supported."
+    );
+  }
+
   throw new Error(
     `Instagram media type "${mediaType}" is not currently supported by this publisher.`
   );
 }
+
+/*
+|--------------------------------------------------------------------------
+| Container status
+|--------------------------------------------------------------------------
+*/
 
 /**
  * Check the status of an Instagram media container.
@@ -308,7 +606,8 @@ async function waitForContainer({
 }) {
   for (
     let attempt = 1;
-    attempt <= CONTAINER_MAX_ATTEMPTS;
+    attempt <=
+      CONTAINER_MAX_ATTEMPTS;
     attempt++
   ) {
     const status =
@@ -375,6 +674,12 @@ async function waitForContainer({
   );
 }
 
+/*
+|--------------------------------------------------------------------------
+| Publish media container
+|--------------------------------------------------------------------------
+*/
+
 /**
  * Publish an Instagram media container.
  */
@@ -417,6 +722,12 @@ async function publishMediaContainer({
   return result;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Public publisher
+|--------------------------------------------------------------------------
+*/
+
 /**
  * Publish content to Instagram.
  *
@@ -431,7 +742,9 @@ export async function publish({
   content,
 }) {
   console.log("=================================");
-  console.log("INSTAGRAM PUBLISHER");
+  console.log(
+    "INSTAGRAM PUBLISHER"
+  );
   console.log("=================================");
 
   /*
@@ -464,18 +777,77 @@ export async function publish({
   );
 
   console.log(
-    "Content type:",
+    "Original content type:",
     content.type ??
       content.mediaType ??
       content.media_type ??
-      "IMAGE"
+      "unknown"
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Inspect payload
+  |--------------------------------------------------------------------------
+  */
+
+  const imageUrl =
+    getImageUrl(content);
+
+  const videoUrl =
+    getVideoUrl(content);
+
+  const mediaType =
+    getMediaType(content);
+
+  console.log(
+    "Instagram detected media type:",
+    mediaType
+  );
+
+  console.log(
+    "Instagram image URL:",
+    imageUrl
+  );
+
+  console.log(
+    "Instagram video URL:",
+    videoUrl
+  );
+
+  console.log(
+    "Instagram payload contains media:",
+    hasMedia(content)
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Prevent accidental text-only publishing
+  |--------------------------------------------------------------------------
+  |
+  | Instagram's publishing flow here is media-based.
+  | If the app sends a pure text post, fail with a
+  | clear message instead of generating a confusing
+  | "image URL required" error.
+  |
+  */
+
+  if (
+    !hasMedia(content)
+  ) {
+    throw new Error(
+      "Instagram publishing requires an image or video URL. The current content payload does not contain publicly accessible media."
+    );
+  }
 
   /*
   |--------------------------------------------------------------------------
   | Step 1: Create media container
   |--------------------------------------------------------------------------
   */
+
+  console.log(
+    "Step 1: Creating Instagram media container..."
+  );
 
   const container =
     await createMediaContainer({
@@ -495,8 +867,9 @@ export async function publish({
   | Step 2: Wait for media processing
   |--------------------------------------------------------------------------
   |
-  | Instagram requires media containers to be ready before
-  | publishing. This is particularly important for video/Reels.
+  | Instagram requires media containers to be ready
+  | before publishing. This is particularly important
+  | for video/Reels.
   |
   */
 
