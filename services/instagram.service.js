@@ -12,28 +12,38 @@ const GRAPH_URL = "https://graph.facebook.com/v23.0";
 export function getInstagramLoginUrl(state) {
   const INSTAGRAM_CONFIG = getInstagramConfig();
 
+  const scopes = [
+    "public_profile",
+
+    // Required to discover the user's Facebook Pages.
+    "pages_show_list",
+
+    // Required for Page/Instagram account access.
+    "pages_read_engagement",
+
+    // Required for Facebook Page publishing.
+    "pages_manage_posts",
+
+    // Instagram Business account access.
+    "instagram_business_basic",
+
+    // Instagram publishing.
+    "instagram_business_content_publish",
+  ];
+
   const params = new URLSearchParams({
-    client_id: INSTAGRAM_CONFIG.appId,
-    redirect_uri: INSTAGRAM_CONFIG.redirectUri,
+    client_id:
+      INSTAGRAM_CONFIG.appId,
 
-    /*
-    |--------------------------------------------------------------------------
-    | Instagram / Facebook permissions
-    |--------------------------------------------------------------------------
-    |
-    | Do NOT request "email".
-    | Meta rejects "email" for this Instagram connection flow.
-    |
-    */
+    redirect_uri:
+      INSTAGRAM_CONFIG.redirectUri,
 
-    scope: [
-      "public_profile",
-      "pages_show_list",
-      "pages_read_engagement",
-      "pages_manage_posts",
-    ].join(","),
+    scope:
+      scopes.join(","),
 
-    response_type: "code",
+    response_type:
+      "code",
+
     state,
   });
 
@@ -43,27 +53,27 @@ export function getInstagramLoginUrl(state) {
   console.log("=================================");
   console.log("Instagram OAuth Configuration");
   console.log("=================================");
+
   console.log(
     "APP ID:",
     INSTAGRAM_CONFIG.appId
   );
+
   console.log(
     "REDIRECT URI:",
     INSTAGRAM_CONFIG.redirectUri
   );
+
   console.log(
     "STATE:",
     state
   );
+
   console.log(
     "SCOPES:",
-    [
-      "public_profile",
-      "pages_show_list",
-      "pages_read_engagement",
-      "pages_manage_posts",
-    ].join(",")
+    scopes.join(",")
   );
+
   console.log("=================================");
   console.log(url);
   console.log("=================================");
@@ -74,7 +84,9 @@ export function getInstagramLoginUrl(state) {
 /**
  * Exchange authorization code for access token
  */
-export async function exchangeCodeForToken(code) {
+export async function exchangeCodeForToken(
+  code
+) {
   const INSTAGRAM_CONFIG =
     getInstagramConfig();
 
@@ -111,7 +123,9 @@ export async function graphGet(
     `${GRAPH_URL}${endpoint}`,
     {
       params: {
-        access_token: accessToken,
+        access_token:
+          accessToken,
+
         ...params,
       },
     }
@@ -126,14 +140,15 @@ export async function graphGet(
 export async function getUserPages(
   accessToken
 ) {
-  const data = await graphGet(
-    "/me/accounts",
-    accessToken,
-    {
-      fields:
-        "id,name,access_token,category,tasks,picture{url}",
-    }
-  );
+  const data =
+    await graphGet(
+      "/me/accounts",
+      accessToken,
+      {
+        fields:
+          "id,name,access_token,category,tasks,picture{url}",
+      }
+    );
 
   return data.data;
 }
