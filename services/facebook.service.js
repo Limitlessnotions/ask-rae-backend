@@ -45,12 +45,16 @@ export function getFacebookLoginUrl(state) {
 
   console.log("STATE:", state);
 
-  /**
-   * Facebook Login for Business
-   *
-   * Permissions are configured inside the
-   * Meta Business Login configuration.
-   */
+  /*
+  |--------------------------------------------------------------------------
+  | Facebook Login for Business
+  |--------------------------------------------------------------------------
+  |
+  | Permissions are configured inside the Meta Business Login
+  | configuration.
+  |
+  */
+
   const params = new URLSearchParams({
     client_id: FACEBOOK_CONFIG.appId,
     redirect_uri: FACEBOOK_CONFIG.redirectUri,
@@ -81,9 +85,15 @@ export async function exchangeCodeForToken(code) {
     `${GRAPH_URL}/oauth/access_token`,
     {
       params: {
-        client_id: FACEBOOK_CONFIG.appId,
-        client_secret: FACEBOOK_CONFIG.appSecret,
-        redirect_uri: FACEBOOK_CONFIG.redirectUri,
+        client_id:
+          FACEBOOK_CONFIG.appId,
+
+        client_secret:
+          FACEBOOK_CONFIG.appSecret,
+
+        redirect_uri:
+          FACEBOOK_CONFIG.redirectUri,
+
         code,
       },
     }
@@ -93,7 +103,7 @@ export async function exchangeCodeForToken(code) {
 }
 
 /**
- * Generic GET helper for the Graph API
+ * Generic GET helper for the Facebook Graph API
  */
 export async function graphGet(
   endpoint,
@@ -104,7 +114,9 @@ export async function graphGet(
     `${GRAPH_URL}${endpoint}`,
     {
       params: {
-        access_token: accessToken,
+        access_token:
+          accessToken,
+
         ...params,
       },
     }
@@ -140,16 +152,42 @@ export async function getFacebookProfile(
 export async function getUserPages(
   accessToken
 ) {
-  const data = await graphGet(
-    "/me/accounts",
-    accessToken,
-    {
-      fields:
-        "id,name,access_token,category,tasks,picture{url}",
-    }
-  );
+  const data =
+    await graphGet(
+      "/me/accounts",
+      accessToken,
+      {
+        fields:
+          "id,name,access_token,category,tasks,picture{url}",
+      }
+    );
 
-  return data.data;
+  return data.data ?? [];
+}
+
+/**
+ * Validate a media URL.
+ */
+function validateMediaUrl(
+  url,
+  mediaType
+) {
+  if (!url) {
+    throw new Error(
+      `Facebook ${mediaType} publishing requires a media URL.`
+    );
+  }
+
+  if (
+    typeof url !== "string" ||
+    !/^https?:\/\//i.test(url)
+  ) {
+    throw new Error(
+      `Facebook ${mediaType} URL must be a valid HTTP/HTTPS URL.`
+    );
+  }
+
+  return url;
 }
 
 /**
@@ -160,15 +198,34 @@ export async function publishPagePost(
   pageId,
   message
 ) {
-  const response = await axios.post(
-    `${GRAPH_URL}/${pageId}/feed`,
-    null,
-    {
-      params: {
-        message,
-        access_token: pageAccessToken,
-      },
-    }
+  if (!message || !message.trim()) {
+    throw new Error(
+      "Facebook text content is empty."
+    );
+  }
+
+  console.log(
+    "Publishing Facebook text post..."
+  );
+
+  const response =
+    await axios.post(
+      `${GRAPH_URL}/${pageId}/feed`,
+      null,
+      {
+        params: {
+          message:
+            message.trim(),
+
+          access_token:
+            pageAccessToken,
+        },
+      }
+    );
+
+  console.log(
+    "✅ Facebook text post published:",
+    response.data
   );
 
   return response.data;
@@ -183,16 +240,37 @@ export async function publishPhoto(
   imageUrl,
   caption = ""
 ) {
-  const response = await axios.post(
-    `${GRAPH_URL}/${pageId}/photos`,
-    null,
-    {
-      params: {
-        url: imageUrl,
-        caption,
-        access_token: pageAccessToken,
-      },
-    }
+  const validatedImageUrl =
+    validateMediaUrl(
+      imageUrl,
+      "photo"
+    );
+
+  console.log(
+    "Publishing Facebook photo..."
+  );
+
+  const response =
+    await axios.post(
+      `${GRAPH_URL}/${pageId}/photos`,
+      null,
+      {
+        params: {
+          url:
+            validatedImageUrl,
+
+          caption:
+            caption ?? "",
+
+          access_token:
+            pageAccessToken,
+        },
+      }
+    );
+
+  console.log(
+    "✅ Facebook photo published:",
+    response.data
   );
 
   return response.data;
@@ -207,16 +285,37 @@ export async function publishVideo(
   videoUrl,
   description = ""
 ) {
-  const response = await axios.post(
-    `${GRAPH_URL}/${pageId}/videos`,
-    null,
-    {
-      params: {
-        file_url: videoUrl,
-        description,
-        access_token: pageAccessToken,
-      },
-    }
+  const validatedVideoUrl =
+    validateMediaUrl(
+      videoUrl,
+      "video"
+    );
+
+  console.log(
+    "Publishing Facebook video..."
+  );
+
+  const response =
+    await axios.post(
+      `${GRAPH_URL}/${pageId}/videos`,
+      null,
+      {
+        params: {
+          file_url:
+            validatedVideoUrl,
+
+          description:
+            description ?? "",
+
+          access_token:
+            pageAccessToken,
+        },
+      }
+    );
+
+  console.log(
+    "✅ Facebook video published:",
+    response.data
   );
 
   return response.data;
@@ -224,55 +323,163 @@ export async function publishVideo(
 
 /**
  * Universal Facebook Publisher
+ *
+ * Supported content types:
+ *
+ *   text
+ *   photo
+ *   video
  */
 export async function publishFacebookContent({
   accessToken,
   pageId,
   content,
 }) {
-  switch (content.type) {
-    case "text": {
-      const message =
-        content.text ??
-        content.message ??
-        "";
+  /*
+  |--------------------------------------------------------------------------
+  | Validate common inputs
+  |--------------------------------------------------------------------------
+  */
 
-      if (!message.trim()) {
-        throw new Error(
-          "Facebook text content is empty."
-        );
-      }
-
-      return await publishPagePost(
-        accessToken,
-        pageId,
-        message
-      );
-    }
-
-    case "photo":
-      return await publishPhoto(
-        accessToken,
-        pageId,
-        content.imageUrl,
-        content.caption ??
-          content.text ??
-          ""
-      );
-
-    case "video":
-      return await publishVideo(
-        accessToken,
-        pageId,
-        content.videoUrl,
-        content.description ??
-          content.text ??
-          ""
-      );
-
-    default:
-      throw new Error(
-        `Unsupported Facebook content type: ${content.type}`
-      );
+  if (!accessToken) {
+    throw new Error(
+      "Facebook access token is missing."
+    );
   }
+
+  if (!pageId) {
+    throw new Error(
+      "Facebook Page ID is missing."
+    );
+  }
+
+  if (!content) {
+    throw new Error(
+      "Facebook content payload is missing."
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Normalize content type
+  |--------------------------------------------------------------------------
+  */
+
+  const contentType =
+    String(
+      content.type ??
+        content.mediaType ??
+        content.media_type ??
+        "text"
+    ).toLowerCase();
+
+  console.log("=================================");
+  console.log("FACEBOOK CONTENT PUBLISHER");
+  console.log("=================================");
+  console.log(
+    "Page ID:",
+    pageId
+  );
+  console.log(
+    "Content type:",
+    contentType
+  );
+  console.log("=================================");
+
+  /*
+  |--------------------------------------------------------------------------
+  | TEXT
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    contentType === "text"
+  ) {
+    const message =
+      content.text ??
+      content.message ??
+      content.caption ??
+      "";
+
+    return await publishPagePost(
+      accessToken,
+      pageId,
+      message
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | PHOTO / IMAGE
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    contentType === "photo" ||
+    contentType === "image"
+  ) {
+    const imageUrl =
+      content.imageUrl ??
+      content.image_url ??
+      content.mediaUrl ??
+      content.media_url ??
+      content.url ??
+      null;
+
+    const caption =
+      content.caption ??
+      content.text ??
+      content.message ??
+      "";
+
+    return await publishPhoto(
+      accessToken,
+      pageId,
+      imageUrl,
+      caption
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | VIDEO
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    contentType === "video" ||
+    contentType === "reel"
+  ) {
+    const videoUrl =
+      content.videoUrl ??
+      content.video_url ??
+      content.mediaUrl ??
+      content.media_url ??
+      content.url ??
+      null;
+
+    const description =
+      content.description ??
+      content.caption ??
+      content.text ??
+      content.message ??
+      "";
+
+    return await publishVideo(
+      accessToken,
+      pageId,
+      videoUrl,
+      description
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | UNSUPPORTED
+  |--------------------------------------------------------------------------
+  */
+
+  throw new Error(
+    `Unsupported Facebook content type: ${content.type}`
+  );
 }
