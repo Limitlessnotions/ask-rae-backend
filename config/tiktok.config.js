@@ -53,11 +53,22 @@ export function getTikTokConfig() {
     |--------------------------------------------------------------------------
     | TikTok OAuth Scopes
     |--------------------------------------------------------------------------
+    |
+    | user.info.basic
+    |   Allows Ask Rae to read the basic TikTok profile information.
+    |
+    | video.upload
+    |   Allows Ask Rae to upload content as a TikTok draft.
+    |
+    | video.publish
+    |   Allows Ask Rae to use TikTok Direct Post.
+    |
     */
 
     scopes: [
       "user.info.basic",
       "video.upload",
+      "video.publish",
     ],
   };
 }
