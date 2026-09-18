@@ -15,6 +15,91 @@
 const TIKTOK_API_BASE =
   "https://open.tiktokapis.com/v2";
 
+const TIKTOK_MEDIA_PROXY_BASE_URL =
+  (
+    process.env.TIKTOK_MEDIA_PROXY_BASE_URL ||
+    "https://ask-rae.vercel.app/api/tiktok-media"
+  ).replace(/\/+$/, "");
+
+const CLOUDINARY_HOST =
+  "res.cloudinary.com";
+
+const CLOUDINARY_CLOUD_NAME =
+  "gmdcnulb";
+
+/**
+ * Convert an Ask Rae media URL into a URL hosted
+ * on the Ask Rae domain.
+ *
+ * TikTok requires PULL_FROM_URL media to belong to
+ * a domain or URL prefix verified by the TikTok app.
+ *
+ * Cloudinary is therefore proxied through:
+ *
+ * https://ask-rae.vercel.app/api/tiktok-media/
+ *
+ * @param {string} mediaUrl
+ * @returns {string}
+ */
+function toTikTokMediaUrl(mediaUrl) {
+  if (
+    typeof mediaUrl !== "string" ||
+    !mediaUrl.trim()
+  ) {
+    return mediaUrl;
+  }
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(mediaUrl);
+  } catch {
+    return mediaUrl;
+  }
+
+  /*
+   * Only transform Cloudinary URLs belonging
+   * to Ask Rae's configured Cloudinary account.
+   */
+  if (
+    parsedUrl.hostname !== CLOUDINARY_HOST
+  ) {
+    return mediaUrl;
+  }
+
+  const expectedPrefix =
+    `/${CLOUDINARY_CLOUD_NAME}/`;
+
+  if (
+    !parsedUrl.pathname.startsWith(
+      expectedPrefix
+    )
+  ) {
+    return mediaUrl;
+  }
+
+  const cloudinaryPath =
+    parsedUrl.pathname.slice(
+      expectedPrefix.length
+    );
+
+  if (
+    !cloudinaryPath.startsWith(
+      "video/upload/"
+    ) &&
+    !cloudinaryPath.startsWith(
+      "image/upload/"
+    )
+  ) {
+    return mediaUrl;
+  }
+
+  return (
+    `${TIKTOK_MEDIA_PROXY_BASE_URL}/` +
+    cloudinaryPath
+  );
+}
+
 /**
  * Make an authenticated request to TikTok.
  *
@@ -214,20 +299,36 @@ async function publishVideo({
   content,
   creatorInfo,
 }) {
-  const mediaUrl =
+  const originalMediaUrl =
     extractMediaUrl(content);
 
-  if (!mediaUrl) {
+  if (!originalMediaUrl) {
     throw new Error(
       "TikTok video URL is missing."
     );
   }
 
+  const mediaUrl =
+    toTikTokMediaUrl(
+      originalMediaUrl
+    );
+
+  console.log(
+    "TikTok original media URL:",
+    originalMediaUrl
+  );
+
+  console.log(
+    "TikTok verified media URL:",
+    mediaUrl
+  );
+
   const caption =
     extractCaption(content);
 
   const privacyOptions =
-    creatorInfo?.data?.privacy_level_options || [];
+    creatorInfo?.data?.privacy_level_options ||
+    [];
 
   /*
   |--------------------------------------------------------------------------
@@ -313,20 +414,36 @@ async function publishPhoto({
   content,
   creatorInfo,
 }) {
-  const mediaUrl =
+  const originalMediaUrl =
     extractMediaUrl(content);
 
-  if (!mediaUrl) {
+  if (!originalMediaUrl) {
     throw new Error(
       "TikTok photo URL is missing."
     );
   }
 
+  const mediaUrl =
+    toTikTokMediaUrl(
+      originalMediaUrl
+    );
+
+  console.log(
+    "TikTok original media URL:",
+    originalMediaUrl
+  );
+
+  console.log(
+    "TikTok verified media URL:",
+    mediaUrl
+  );
+
   const caption =
     extractCaption(content);
 
   const privacyOptions =
-    creatorInfo?.data?.privacy_level_options || [];
+    creatorInfo?.data?.privacy_level_options ||
+    [];
 
   const privacyLevel =
     privacyOptions.includes("SELF_ONLY")
@@ -441,9 +558,17 @@ export async function publish({
   |--------------------------------------------------------------------------
   */
 
-  console.log("=================================");
-  console.log("TIKTOK PUBLISHER");
-  console.log("=================================");
+  console.log(
+    "================================="
+  );
+
+  console.log(
+    "TIKTOK PUBLISHER"
+  );
+
+  console.log(
+    "================================="
+  );
 
   console.log(
     "TikTok Target ID:",
@@ -513,7 +638,9 @@ export async function publish({
       result.publishId
     );
 
-    console.log("=================================");
+    console.log(
+      "================================="
+    );
 
     return result;
   }
@@ -544,7 +671,9 @@ export async function publish({
     result.publishId
   );
 
-  console.log("=================================");
+  console.log(
+    "================================="
+  );
 
   return result;
 }
