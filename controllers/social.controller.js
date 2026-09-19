@@ -61,14 +61,9 @@ export const getAccounts = async (req, res) => {
         | Use the Facebook Page identity
         |--------------------------------------------------------------------------
         |
-        | Facebook Login for Business is returning:
-        |
-        |   profile.name = "Ask Rae System User"
-        |
-        | That is NOT what we want to display in the app.
-        |
-        | The Page returned by /me/accounts contains the actual
-        | publishing destination and its public identity.
+        | Facebook Login for Business may return the Meta System User
+        | as the connected profile. The Page returned by /me/accounts
+        | is the actual publishing destination.
         |
         */
 
@@ -289,7 +284,8 @@ export const publishSocialContent = async (
 
     targetId =
       targetId ||
-      social.defaultTargetId;
+      social.defaultTargetId ||
+      social.platformUserId;
 
     if (!targetId) {
       return res.status(400).json({
@@ -308,8 +304,27 @@ export const publishSocialContent = async (
     let accessToken =
       social.accessToken;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Resolve Target Name
+    |--------------------------------------------------------------------------
+    |
+    | Facebook uses the selected Page name.
+    |
+    | TikTok does not currently store defaultTargetName in its
+    | socialAccounts document. Its connected account document
+    | contains `name`, which is the appropriate display identity.
+    |
+    | Other platforms use the available account name fields.
+    |
+    */
+
     let targetName =
-      social.defaultTargetName;
+      social.defaultTargetName ??
+      social.name ??
+      social.displayName ??
+      social.username ??
+      null;
 
     if (platform === "facebook") {
       const page =
@@ -329,8 +344,23 @@ export const publishSocialContent = async (
         page.accessToken;
 
       targetName =
-        page.name;
+        page.name ??
+        targetName ??
+        "Facebook";
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Final Firestore-safe fallback
+    |--------------------------------------------------------------------------
+    |
+    | Never write undefined into Firestore.
+    |
+    */
+
+    targetName =
+      targetName ??
+      platform;
 
     /*
     |--------------------------------------------------------------------------
@@ -348,6 +378,27 @@ export const publishSocialContent = async (
 
     /*
     |--------------------------------------------------------------------------
+    | Determine Publishing History Status
+    |--------------------------------------------------------------------------
+    |
+    | TikTok Direct Post returns a publish_id and then processes
+    | the post asynchronously. Therefore a TikTok result with
+    | status "processing" must not immediately be recorded as
+    | "success".
+    |
+    | Other publishers can continue to use "success" unless
+    | their result explicitly reports another status.
+    |
+    */
+
+    const historyStatus =
+      platform === "tiktok" &&
+      result?.status === "processing"
+        ? "processing"
+        : result?.status || "success";
+
+    /*
+    |--------------------------------------------------------------------------
     | Save Publishing History
     |--------------------------------------------------------------------------
     */
@@ -360,9 +411,9 @@ export const publishSocialContent = async (
         platform,
         targetId,
         targetName,
-        type: content.type,
+        type: content.type ?? null,
         content,
-        status: "success",
+        status: historyStatus,
         result,
         publishedAt: new Date(),
       });
@@ -370,7 +421,9 @@ export const publishSocialContent = async (
     return res.status(200).json({
       success: true,
       message:
-        "Content published successfully.",
+        historyStatus === "processing"
+          ? "Content publishing has been initialized."
+          : "Content published successfully.",
       result,
     });
   } catch (error) {
@@ -390,6 +443,11 @@ export const publishSocialContent = async (
 
           targetId:
             req.body.targetId ?? null,
+
+          targetName:
+            req.body.platform === "tiktok"
+              ? "TikTok"
+              : null,
 
           type:
             req.body.content?.type ??
