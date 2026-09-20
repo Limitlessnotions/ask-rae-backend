@@ -18,6 +18,7 @@ import calendarRoutes from "./routes/calendar.routes.js";
 import wellnessRoutes from "./routes/wellness.routes.js";
 import accountabilityRoutes from "./routes/accountability.routes.js";
 import accountRoutes from "./routes/account.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 
 dotenv.config();
 
@@ -159,6 +160,11 @@ app.use(
 app.use(
   "/api/account",
   accountRoutes
+);
+
+app.use(
+  "/api/admin",
+  adminRoutes
 );
 
 const PORT =
