@@ -1,4 +1,5 @@
 import { auth } from "../firebase/firebaseAdmin.js";
+
 import {
   getDashboard,
   getFoundingStatus,
@@ -12,62 +13,225 @@ import {
 } from "../services/admin.service.js";
 
 export async function getMe(req, res) {
-  return res.json({ success: true, admin: req.user });
+  return res.json({
+    success: true,
+    admin: req.user,
+  });
 }
 
 export async function dashboard(req, res) {
-  try { return res.json({ success: true, data: await getDashboard() }); }
-  catch (error) { console.error(error); return res.status(500).json({ success: false, message: "Unable to load dashboard." }); }
+  try {
+    return res.json({
+      success: true,
+      data: await getDashboard(),
+    });
+  } catch (error) {
+    console.error("[ADMIN CONTROLLER] Dashboard error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load dashboard.",
+    });
+  }
 }
 
 export async function founding(req, res) {
-  try { return res.json({ success: true, data: await getFoundingStatus() }); }
-  catch (error) { return res.status(500).json({ success: false, message: error.message }); }
+  try {
+    return res.json({
+      success: true,
+      data: await getFoundingStatus(),
+    });
+  } catch (error) {
+    console.error("[ADMIN CONTROLLER] Founding status error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 }
 
 export async function users(req, res) {
-  try { return res.json({ success: true, ...await listUsers(req.query) }); }
-  catch (error) { console.error(error); return res.status(500).json({ success: false, message: "Unable to load users." }); }
+  try {
+    return res.json({
+      success: true,
+      ...(await listUsers(req.query)),
+    });
+  } catch (error) {
+    console.error("[ADMIN CONTROLLER] Users error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load users.",
+    });
+  }
 }
 
 export async function userDetails(req, res) {
-  try { return res.json({ success: true, data: await getUserDetails(req.params.uid) }); }
-  catch (error) {
-    if (error.code === "auth/user-not-found") return res.status(404).json({ success: false, message: "User not found." });
-    console.error(error); return res.status(500).json({ success: false, message: "Unable to load user." });
+  const uid = req.params.uid;
+
+  console.log(
+    `[ADMIN CONTROLLER] Starting userDetails response: ${uid}`
+  );
+
+  try {
+    const data = await getUserDetails(uid);
+
+    console.log(
+      `[ADMIN CONTROLLER] getUserDetails completed: ${uid}`
+    );
+
+    console.log(
+      `[ADMIN CONTROLLER] Sending JSON response: ${uid}`
+    );
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error(
+      `[ADMIN CONTROLLER] ERROR for ${uid}:`,
+      error
+    );
+
+    if (error.code === "auth/user-not-found") {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load user.",
+    });
   }
 }
 
 export async function setUserDisabled(req, res) {
   const { uid } = req.params;
+
   try {
     const disabled = Boolean(req.body?.disabled);
-    await auth.updateUser(uid, { disabled });
-    await writeAuditLog({ actor: req.user, action: disabled ? "suspend_user" : "reactivate_user", targetType: "user", targetId: uid });
-    return res.json({ success: true, disabled });
+
+    await auth.updateUser(uid, {
+      disabled,
+    });
+
+    await writeAuditLog({
+      actor: req.user,
+      action: disabled
+        ? "suspend_user"
+        : "reactivate_user",
+      targetType: "user",
+      targetId: uid,
+    });
+
+    return res.json({
+      success: true,
+      disabled,
+    });
   } catch (error) {
-    console.error(error);
-    await writeAuditLog({ actor: req.user, action: "change_user_status", targetType: "user", targetId: uid, result: "failed" });
-    return res.status(500).json({ success: false, message: "Unable to update user status." });
+    console.error(
+      "[ADMIN CONTROLLER] Set user status error:",
+      error
+    );
+
+    try {
+      await writeAuditLog({
+        actor: req.user,
+        action: "change_user_status",
+        targetType: "user",
+        targetId: uid,
+        result: "failed",
+      });
+    } catch (auditError) {
+      console.error(
+        "[ADMIN CONTROLLER] Failed to write audit log:",
+        auditError
+      );
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to update user status.",
+    });
   }
 }
 
 export async function subscriptions(req, res) {
-  try { return res.json({ success: true, data: await listSubscriptions(req.query) }); }
-  catch (error) { console.error(error); return res.status(500).json({ success: false, message: "Unable to load subscriptions." }); }
+  try {
+    return res.json({
+      success: true,
+      data: await listSubscriptions(req.query),
+    });
+  } catch (error) {
+    console.error(
+      "[ADMIN CONTROLLER] Subscriptions error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load subscriptions.",
+    });
+  }
 }
 
 export async function auditLogs(req, res) {
-  try { return res.json({ success: true, data: await listAuditLogs(req.query) }); }
-  catch (error) { console.error(error); return res.status(500).json({ success: false, message: "Unable to load audit logs." }); }
+  try {
+    return res.json({
+      success: true,
+      data: await listAuditLogs(req.query),
+    });
+  } catch (error) {
+    console.error(
+      "[ADMIN CONTROLLER] Audit logs error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load audit logs.",
+    });
+  }
 }
 
 export async function publications(req, res) {
-  try { return res.json({ success: true, data: await listPublications(req.query) }); }
-  catch (error) { console.error(error); return res.status(500).json({ success: false, message: "Unable to load publications." }); }
+  try {
+    return res.json({
+      success: true,
+      data: await listPublications(req.query),
+    });
+  } catch (error) {
+    console.error(
+      "[ADMIN CONTROLLER] Publications error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load publications.",
+    });
+  }
 }
 
 export async function health(req, res) {
-  try { return res.json({ success: true, data: await getSystemHealth() }); }
-  catch (error) { return res.status(500).json({ success: false, message: "Unable to load system health." }); }
+  try {
+    return res.json({
+      success: true,
+      data: await getSystemHealth(),
+    });
+  } catch (error) {
+    console.error(
+      "[ADMIN CONTROLLER] Health error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load system health.",
+    });
+  }
 }
