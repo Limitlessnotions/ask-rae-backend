@@ -1,6 +1,30 @@
 import { auth, db } from "../firebase/firebaseAdmin.js";
 
-const PLATFORMS = ["facebook", "instagram", "tiktok", "x"];
+const PLATFORMS = [
+  "facebook",
+  "instagram",
+  "tiktok",
+  "x",
+];
+
+const SENSITIVE_KEYS = new Set([
+  "accessToken",
+  "access_token",
+  "refreshToken",
+  "refresh_token",
+  "idToken",
+  "id_token",
+  "token",
+  "clientSecret",
+  "client_secret",
+  "secret",
+  "password",
+  "authorization",
+  "cookie",
+  "sessionToken",
+  "session_token",
+  "raw",
+]);
 
 function serialize(value) {
   if (value?.toDate instanceof Function) {
@@ -29,64 +53,368 @@ function serialize(value) {
 }
 
 /**
- * Removes authentication credentials and other sensitive
- * provider data before returning social account information
- * through the admin API.
+ * Recursively removes credentials and other sensitive values.
+ *
+ * This is used both for API responses and audit metadata.
  */
-function sanitizeSocial(data = {}) {
-  const out = { ...data };
-
-  // Never expose authentication credentials through the admin API.
-  for (const key of [
-    "accessToken",
-    "refreshToken",
-    "token",
-    "clientSecret",
-    "secret",
-    "raw",
-  ]) {
-    delete out[key];
+function sanitizeSensitive(value) {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeSensitive);
   }
 
-  // Sanitize Facebook page objects as well.
-  if (Array.isArray(out.pages)) {
-    out.pages = out.pages.map((page) => {
-      const copy = { ...page };
+  if (!value || typeof value !== "object") {
+    return value;
+  }
 
-      delete copy.access_token;
-      delete copy.accessToken;
-      delete copy.refresh_token;
-      delete copy.refreshToken;
-      delete copy.token;
-      delete copy.secret;
+  const out = {};
 
-      return copy;
-    });
+  for (const [key, val] of Object.entries(value)) {
+    if (SENSITIVE_KEYS.has(key)) {
+      continue;
+    }
+
+    out[key] = sanitizeSensitive(val);
   }
 
   return out;
 }
 
-export async function getDashboard() {
-  const usersCountSnap = await db.collection("users").count().get();
+function sanitizeSocial(data = {}) {
+  return sanitizeSensitive(data);
+}
 
-  const usersCount = usersCountSnap.data().count;
+function sanitizeForResponse(value) {
+  return sanitizeSensitive(serialize(value));
+}
+
+/**
+ * Safely checks whether an environment variable exists.
+ */
+function isConfigured(value) {
+  return Boolean(
+    typeof value === "string" && value.trim()
+  );
+}
+
+/**
+ * Create a consistent health-check result.
+ */
+function healthResult({
+  status,
+  message,
+  latencyMs,
+}) {
+  return {
+    status,
+    message,
+    ...(typeof latencyMs === "number"
+      ? { latencyMs }
+      : {}),
+  };
+}
+
+/**
+ * Measure an async health check.
+ */
+async function measureCheck(check) {
+  const startedAt = Date.now();
+
+  try {
+    const result = await check();
+
+    return {
+      ...result,
+      latencyMs: Date.now() - startedAt,
+    };
+  } catch (error) {
+    return healthResult({
+      status: "unhealthy",
+      message:
+        error?.message ||
+        "Health check failed.",
+      latencyMs: Date.now() - startedAt,
+    });
+  }
+}
+
+/**
+ * Actual OpenAI connectivity check.
+ *
+ * This calls the models endpoint rather than merely
+ * checking whether OPENAI_API_KEY exists.
+ */
+async function checkOpenAI() {
+  if (!isConfigured(process.env.OPENAI_API_KEY)) {
+    return healthResult({
+      status: "not_configured",
+      message: "OPENAI_API_KEY is not configured.",
+    });
+  }
+
+  const response = await fetch(
+    "https://api.openai.com/v1/models",
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      signal: AbortSignal.timeout(10000),
+    }
+  );
+
+  if (!response.ok) {
+    let detail = "";
+
+    try {
+      const body = await response.json();
+
+      detail =
+        body?.error?.message ||
+        body?.message ||
+        "";
+    } catch {
+      // Ignore response parsing errors.
+    }
+
+    throw new Error(
+      `OpenAI returned HTTP ${response.status}${
+        detail ? `: ${detail}` : "."
+      }`
+    );
+  }
+
+  return healthResult({
+    status: "healthy",
+    message: "OpenAI API connection successful.",
+  });
+}
+
+/**
+ * Firestore connectivity check.
+ */
+async function checkFirestore() {
+  const snapshot = await db
+    .collection("config")
+    .doc("health")
+    .get();
+
+  return healthResult({
+    status: "healthy",
+    message: snapshot.exists
+      ? "Firestore connection successful."
+      : "Firestore connection successful; health document does not exist.",
+  });
+}
+
+/**
+ * Backend is healthy when this function executes.
+ */
+async function checkBackend() {
+  return healthResult({
+    status: "healthy",
+    message: "Admin backend is responding.",
+  });
+}
+
+/**
+ * Cloudinary currently reports configuration state.
+ *
+ * We intentionally do not manufacture a provider API
+ * request because the current backend file does not
+ * establish which Cloudinary credential/authentication
+ * variables are used for API authentication.
+ */
+async function checkCloudinary() {
+  if (
+    isConfigured(
+      process.env.CLOUDINARY_CLOUD_NAME
+    )
+  ) {
+    return healthResult({
+      status: "degraded",
+      message:
+        "Cloudinary is configured. Provider connectivity is not actively verified by the admin health check.",
+    });
+  }
+
+  return healthResult({
+    status: "not_configured",
+    message:
+      "CLOUDINARY_CLOUD_NAME is not configured.",
+  });
+}
+
+/**
+ * RevenueCat currently reports configuration state.
+ *
+ * The existing backend health implementation only
+ * establishes REVENUECAT_WEBHOOK_AUTH as a configured
+ * variable, so we preserve that contract rather than
+ * guessing a RevenueCat API credential.
+ */
+async function checkRevenueCat() {
+  if (
+    isConfigured(
+      process.env.REVENUECAT_WEBHOOK_AUTH
+    )
+  ) {
+    return healthResult({
+      status: "degraded",
+      message:
+        "RevenueCat configuration is present. Provider connectivity is not actively verified by the admin health check.",
+    });
+  }
+
+  return healthResult({
+    status: "not_configured",
+    message:
+      "REVENUECAT_WEBHOOK_AUTH is not configured.",
+  });
+}
+
+/**
+ * Meta currently reports configuration state.
+ *
+ * The existing backend uses FACEBOOK_APP_ID as the
+ * known configuration signal.
+ */
+async function checkMeta() {
+  if (
+    isConfigured(
+      process.env.FACEBOOK_APP_ID
+    )
+  ) {
+    return healthResult({
+      status: "degraded",
+      message:
+        "Meta configuration is present. Graph API connectivity is not actively verified by the admin health check.",
+    });
+  }
+
+  return healthResult({
+    status: "not_configured",
+    message:
+      "FACEBOOK_APP_ID is not configured.",
+  });
+}
+
+/**
+ * TikTok currently reports configuration state.
+ */
+async function checkTikTok() {
+  if (
+    isConfigured(
+      process.env.TIKTOK_CLIENT_KEY
+    )
+  ) {
+    return healthResult({
+      status: "degraded",
+      message:
+        "TikTok configuration is present. Provider connectivity is not actively verified by the admin health check.",
+    });
+  }
+
+  return healthResult({
+    status: "not_configured",
+    message:
+      "TIKTOK_CLIENT_KEY is not configured.",
+  });
+}
+
+/**
+ * X currently reports configuration state.
+ */
+async function checkX() {
+  if (
+    isConfigured(
+      process.env.X_CLIENT_ID
+    )
+  ) {
+    return healthResult({
+      status: "degraded",
+      message:
+        "X configuration is present. Provider connectivity is not actively verified by the admin health check.",
+    });
+  }
+
+  return healthResult({
+    status: "not_configured",
+    message:
+      "X_CLIENT_ID is not configured.",
+    });
+}
+
+/**
+ * Calculate an overall health state.
+ */
+function calculateOverallStatus(checks) {
+  const statuses = Object.values(checks).map(
+    (check) => check.status
+  );
+
+  if (
+    statuses.some(
+      (status) => status === "unhealthy"
+    )
+  ) {
+    return "unhealthy";
+  }
+
+  if (
+    statuses.some(
+      (status) => status === "degraded"
+    )
+  ) {
+    return "degraded";
+  }
+
+  if (
+    statuses.every(
+      (status) => status === "healthy"
+    )
+  ) {
+    return "healthy";
+  }
+
+  if (
+    statuses.every(
+      (status) => status === "not_configured"
+    )
+  ) {
+    return "degraded";
+  }
+
+  return "degraded";
+}
+
+export async function getDashboard() {
+  const usersCountSnap = await db
+    .collection("users")
+    .count()
+    .get();
+
+  const usersCount =
+    usersCountSnap.data().count;
 
   const usersSnap = await db
     .collection("users")
     .limit(1000)
     .get();
 
-  const subscriptionRefs = usersSnap.docs.map((doc) =>
-    doc.ref.collection("subscription").doc("current")
-  );
-
-  const socialRefs = usersSnap.docs.flatMap((doc) =>
-    PLATFORMS.map((platform) =>
+  const subscriptionRefs =
+    usersSnap.docs.map((doc) =>
       doc.ref
-        .collection("socialAccounts")
-        .doc(platform)
-    )
+        .collection("subscription")
+        .doc("current")
+    );
+
+  const socialRefs = usersSnap.docs.flatMap(
+    (doc) =>
+      PLATFORMS.map((platform) =>
+        doc.ref
+          .collection("socialAccounts")
+          .doc(platform)
+      )
   );
 
   const [
@@ -95,26 +423,32 @@ export async function getDashboard() {
     founding,
   ] = await Promise.all([
     Promise.all(
-      subscriptionRefs.map((ref) => ref.get())
+      subscriptionRefs.map((ref) =>
+        ref.get()
+      )
     ),
 
     Promise.all(
-      socialRefs.map((ref) => ref.get())
+      socialRefs.map((ref) =>
+        ref.get()
+      )
     ),
 
     getFoundingStatus(),
   ]);
 
-  const subscriptions = subscriptionSnaps
-    .filter((snap) => snap.exists)
-    .map((snap) => snap.data());
+  const subscriptions =
+    subscriptionSnaps
+      .filter((snap) => snap.exists)
+      .map((snap) => snap.data());
 
-  const socialCounts = Object.fromEntries(
-    PLATFORMS.map((platform) => [
-      platform,
-      0,
-    ])
-  );
+  const socialCounts =
+    Object.fromEntries(
+      PLATFORMS.map((platform) => [
+        platform,
+        0,
+      ])
+    );
 
   socialSnaps.forEach((snap) => {
     if (
@@ -129,7 +463,9 @@ export async function getDashboard() {
   let trialUsers = 0;
 
   for (const subscription of subscriptions) {
-    if (subscription.status === "active") {
+    if (
+      subscription.status === "active"
+    ) {
       activeSubscriptions += 1;
     }
 
@@ -141,49 +477,55 @@ export async function getDashboard() {
     }
   }
 
-  const publishedCounts = await Promise.all(
-    usersSnap.docs.map(async (user) => {
-      const snap = await user.ref
-        .collection("publishedContent")
-        .get();
+  const publishedCounts =
+    await Promise.all(
+      usersSnap.docs.map(async (user) => {
+        const snap = await user.ref
+          .collection("publishedContent")
+          .get();
 
-      return snap.docs.reduce(
-        (acc, doc) => {
-          const status =
-            doc.data()?.status || "unknown";
+        return snap.docs.reduce(
+          (acc, doc) => {
+            const status =
+              doc.data()?.status ||
+              "unknown";
 
-          acc.total += 1;
-          acc[status] =
-            (acc[status] || 0) + 1;
+            acc.total += 1;
+            acc[status] =
+              (acc[status] || 0) + 1;
 
-          return acc;
-        },
-        { total: 0 }
-      );
-    })
-  );
+            return acc;
+          },
+          { total: 0 }
+        );
+      })
+    );
 
-  const publishing = publishedCounts.reduce(
-    (acc, current) => {
-      acc.total += current.total;
-      acc.published +=
-        current.success || 0;
-      acc.processing +=
-        current.processing || 0;
-      acc.failed +=
-        current.failed || 0;
+  const publishing =
+    publishedCounts.reduce(
+      (acc, current) => {
+        acc.total += current.total;
 
-      return acc;
-    },
-    {
-      total: 0,
-      published: 0,
-      processing: 0,
-      failed: 0,
-    }
-  );
+        acc.published +=
+          current.success || 0;
 
-  return serialize({
+        acc.processing +=
+          current.processing || 0;
+
+        acc.failed +=
+          current.failed || 0;
+
+        return acc;
+      },
+      {
+        total: 0,
+        published: 0,
+        processing: 0,
+        failed: 0,
+      }
+    );
+
+  return sanitizeForResponse({
     users: {
       total: usersCount,
     },
@@ -217,11 +559,15 @@ export async function getFoundingStatus() {
     ? snap.data()
     : {};
 
-  const count = Number.isFinite(data.count)
+  const count = Number.isFinite(
+    data.count
+  )
     ? data.count
     : 0;
 
-  const limit = Number.isFinite(data.limit)
+  const limit = Number.isFinite(
+    data.limit
+  )
     ? data.limit
     : 100;
 
@@ -248,14 +594,15 @@ export async function listUsers({
     pageToken || undefined
   );
 
-  const firestoreDocs = await Promise.all(
-    result.users.map((user) =>
-      db
-        .collection("users")
-        .doc(user.uid)
-        .get()
-    )
-  );
+  const firestoreDocs =
+    await Promise.all(
+      result.users.map((user) =>
+        db
+          .collection("users")
+          .doc(user.uid)
+          .get()
+      )
+    );
 
   const users = await Promise.all(
     result.users.map(
@@ -273,7 +620,7 @@ export async function listUsers({
             .doc("current")
             .get();
 
-        return serialize({
+        return sanitizeForResponse({
           uid: user.uid,
 
           email:
@@ -291,13 +638,11 @@ export async function listUsers({
             user.disabled,
 
           createdAt:
-            user.metadata
-              .creationTime ||
+            user.metadata.creationTime ||
             null,
 
           lastSignInAt:
-            user.metadata
-              .lastSignInTime ||
+            user.metadata.lastSignInTime ||
             null,
 
           emailVerified:
@@ -314,6 +659,7 @@ export async function listUsers({
 
   return {
     users,
+
     nextPageToken:
       result.pageToken || null,
   };
@@ -457,11 +803,6 @@ export async function getUserDetails(uid) {
         ? subscriptionSnap.data()
         : null,
 
-    /*
-     * IMPORTANT:
-     * sanitizeSocial() removes raw provider
-     * credentials before they leave the backend.
-     */
     socialAccounts:
       Object.fromEntries(
         socialSnap.docs.map((doc) => [
@@ -473,27 +814,27 @@ export async function getUserDetails(uid) {
       ),
 
     recentPublications:
-  publishedSnap.docs
-    .map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }))
-    .sort((a, b) => {
-      const dateA = new Date(
-        a.publishedAt ||
-          a.createdAt ||
-          0
-      ).getTime();
+      publishedSnap.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+        .sort((a, b) => {
+          const dateA = new Date(
+            a.publishedAt ||
+              a.createdAt ||
+              0
+          ).getTime();
 
-      const dateB = new Date(
-        b.publishedAt ||
-          b.createdAt ||
-          0
-      ).getTime();
+          const dateB = new Date(
+            b.publishedAt ||
+              b.createdAt ||
+              0
+          ).getTime();
 
-      return dateB - dateA;
-    })
-    .slice(0, 20),
+          return dateB - dateA;
+        })
+        .slice(0, 20),
 
     accountability:
       goalsSnap.docs.map((doc) => ({
@@ -507,7 +848,7 @@ export async function getUserDetails(uid) {
   );
 
   const serialized =
-    serialize(result);
+    sanitizeForResponse(result);
 
   console.log(
     `[ADMIN USER] COMPLETE: ${uid}`
@@ -541,26 +882,42 @@ export async function listPublications({
 
     snap.docs.forEach((doc) => {
       rows.push(
-        serialize({
+        sanitizeForResponse({
           id: doc.id,
+
           userId: user.uid,
+
           userEmail:
             user.email || null,
+
           ...doc.data(),
         })
       );
     });
   }
 
-  rows.sort((a, b) =>
-    String(
-      b.publishedAt || ""
-    ).localeCompare(
-      String(
-        a.publishedAt || ""
-      )
-    )
-  );
+  rows.sort((a, b) => {
+    const dateA = new Date(
+      a.publishedAt ||
+        a.createdAt ||
+        0
+    ).getTime();
+
+    const dateB = new Date(
+      b.publishedAt ||
+        b.createdAt ||
+        0
+    ).getTime();
+
+    return (
+      (Number.isNaN(dateB)
+        ? 0
+        : dateB) -
+      (Number.isNaN(dateA)
+        ? 0
+        : dateA)
+    );
+  });
 
   return rows.slice(
     0,
@@ -595,7 +952,7 @@ export async function listSubscriptions({
     }
 
     rows.push(
-      serialize({
+      sanitizeForResponse({
         uid: user.uid,
 
         email:
@@ -608,6 +965,39 @@ export async function listSubscriptions({
       })
     );
   }
+
+  rows.sort((a, b) => {
+    const nameA = String(
+      a.name ||
+        a.email ||
+        a.uid ||
+        ""
+    ).trim();
+
+    const nameB = String(
+      b.name ||
+        b.email ||
+        b.uid ||
+        ""
+    ).trim();
+
+    const comparison =
+      nameA.localeCompare(
+        nameB,
+        undefined,
+        {
+          sensitivity: "base",
+        }
+      );
+
+    if (comparison !== 0) {
+      return comparison;
+    }
+
+    return String(a.uid).localeCompare(
+      String(b.uid)
+    );
+  });
 
   return rows;
 }
@@ -631,7 +1021,7 @@ export async function listAuditLogs({
       .get();
 
   return snap.docs.map((doc) =>
-    serialize({
+    sanitizeForResponse({
       id: doc.id,
       ...doc.data(),
     })
@@ -641,54 +1031,52 @@ export async function listAuditLogs({
 export async function getSystemHealth() {
   const checks = {};
 
-  try {
-    await db
-      .collection("config")
-      .doc("health")
-      .get();
-
-    checks.firestore =
-      "healthy";
-  } catch {
-    checks.firestore =
-      "unhealthy";
-  }
-
   checks.backend =
-    "healthy";
+    await measureCheck(
+      checkBackend
+    );
+
+  checks.firestore =
+    await measureCheck(
+      checkFirestore
+    );
 
   checks.openai =
-    process.env.OPENAI_API_KEY
-      ? "configured"
-      : "missing";
+    await measureCheck(
+      checkOpenAI
+    );
 
   checks.cloudinary =
-    process.env.CLOUDINARY_CLOUD_NAME
-      ? "configured"
-      : "missing";
+    await measureCheck(
+      checkCloudinary
+    );
 
   checks.revenueCat =
-    process.env.REVENUECAT_WEBHOOK_AUTH
-      ? "configured"
-      : "missing";
+    await measureCheck(
+      checkRevenueCat
+    );
 
   checks.meta =
-    process.env.FACEBOOK_APP_ID
-      ? "configured"
-      : "missing";
+    await measureCheck(
+      checkMeta
+    );
 
   checks.tiktok =
-    process.env.TIKTOK_CLIENT_KEY
-      ? "configured"
-      : "missing";
+    await measureCheck(
+      checkTikTok
+    );
 
   checks.x =
-    process.env.X_CLIENT_ID
-      ? "configured"
-      : "missing";
+    await measureCheck(
+      checkX
+    );
 
   return {
+    status:
+      calculateOverallStatus(checks),
+
     checks,
+
     checkedAt:
       new Date().toISOString(),
   };
@@ -702,6 +1090,9 @@ export async function writeAuditLog({
   result = "success",
   metadata = {},
 }) {
+  const safeMetadata =
+    sanitizeSensitive(metadata);
+
   await db
     .collection("admin_audit_logs")
     .add({
@@ -723,7 +1114,8 @@ export async function writeAuditLog({
 
       result,
 
-      metadata,
+      metadata:
+        safeMetadata,
 
       createdAt:
         new Date(),
