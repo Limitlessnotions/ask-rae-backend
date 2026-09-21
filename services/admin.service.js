@@ -473,25 +473,27 @@ export async function getUserDetails(uid) {
       ),
 
     recentPublications:
-      publishedSnap.docs
-        .map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }))
-        .sort((a, b) =>
-          String(
-            b.publishedAt ||
-              b.createdAt ||
-              ""
-          ).localeCompare(
-            String(
-              a.publishedAt ||
-                a.createdAt ||
-                ""
-            )
-          )
-        )
-        .slice(0, 20),
+  publishedSnap.docs
+    .map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }))
+    .sort((a, b) => {
+      const dateA = new Date(
+        a.publishedAt ||
+          a.createdAt ||
+          0
+      ).getTime();
+
+      const dateB = new Date(
+        b.publishedAt ||
+          b.createdAt ||
+          0
+      ).getTime();
+
+      return dateB - dateA;
+    })
+    .slice(0, 20),
 
     accountability:
       goalsSnap.docs.map((doc) => ({
