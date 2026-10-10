@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import {
@@ -6,25 +7,22 @@ import {
 } from "../controllers/affirmation.controller.js";
 
 import {
+  saveUserAffirmationSchedule,
+  getUserAffirmationSchedule,
+  getUpcomingUserAffirmations,
+  cancelUserAffirmationSchedule,
+} from "../controllers/userAffirmation.controller.js";
+
+import {
   verifyUser,
 } from "../middleware/auth.middleware.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
 /**
  * GET /api/affirmation/daily
  *
- * Get today's personalized
- * affirmation for the authenticated user.
- *
- * Query parameters:
- *
- * timezone
- *   IANA timezone, e.g.
- *   Africa/Lagos
- *   America/New_York
- *   Europe/London
+ * Get today's built-in personalized affirmation.
  */
 router.get(
   "/daily",
@@ -35,21 +33,65 @@ router.get(
 /**
  * GET /api/affirmation/upcoming
  *
- * Get/generate upcoming personalized
- * daily affirmations.
- *
- * Query parameters:
- *
- * days
- *   Number of days to prepare.
- *
- * timezone
- *   IANA timezone.
+ * Get upcoming built-in daily affirmations.
  */
 router.get(
   "/upcoming",
   verifyUser,
   getUpcomingDailyAffirmations
+);
+
+/**
+ * POST /api/affirmation/user-schedule
+ *
+ * Create or update the user's separate recurring
+ * affirmation schedule.
+ *
+ * Body:
+ * {
+ *   "hour": 18,
+ *   "minute": 0,
+ *   "timezone": "Africa/Lagos"
+ * }
+ */
+router.post(
+  "/user-schedule",
+  verifyUser,
+  saveUserAffirmationSchedule
+);
+
+/**
+ * GET /api/affirmation/user-schedule
+ *
+ * Retrieve the user's recurring affirmation schedule.
+ */
+router.get(
+  "/user-schedule",
+  verifyUser,
+  getUserAffirmationSchedule
+);
+
+/**
+ * GET /api/affirmation/user-upcoming
+ *
+ * Get upcoming affirmations for the user's separate series.
+ */
+router.get(
+  "/user-upcoming",
+  verifyUser,
+  getUpcomingUserAffirmations
+);
+
+/**
+ * DELETE /api/affirmation/user-schedule
+ *
+ * Cancel the user-created series without affecting
+ * the built-in 8:00 AM affirmation.
+ */
+router.delete(
+  "/user-schedule",
+  verifyUser,
+  cancelUserAffirmationSchedule
 );
 
 export default router;
