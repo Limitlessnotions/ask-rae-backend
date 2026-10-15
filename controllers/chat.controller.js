@@ -1,3 +1,4 @@
+
 import { db } from "../firebase/firebaseAdmin.js";
 
 import {
@@ -19,6 +20,11 @@ import {
   getActiveGoals,
   createExtractedGoal,
 } from "../services/accountability.service.js";
+
+// Identifies Life Hub prompts created by the existing
+// frontend service without changing the /api/chat contract.
+const LIFE_HUB_PROMPT_MARKER =
+  "You are Rae, the AI assistant inside Ask Rae Life Hub.";
 
 export const chat = async (
   req,
@@ -46,6 +52,15 @@ export const chat = async (
 
     const cleanMessage =
       message.trim();
+
+    // Life Hub prompts contain task instructions generated
+    // by the existing Life Hub service. They should not be
+    // treated as ordinary chat messages for memory or goal
+    // extraction.
+    const isLifeHubRequest =
+      cleanMessage.includes(
+        LIFE_HUB_PROMPT_MARKER
+      );
 
     /**
      * Load user profile.
@@ -127,11 +142,17 @@ export const chat = async (
      * contains an actionable goal.
      *
      * This is deliberately conservative.
+     *
+     * Life Hub requests are excluded because
+     * their prompts describe tasks to perform,
+     * not necessarily goals the user wants tracked.
      */
     const goal =
-      await extractGoal(
-        cleanMessage
-      );
+      isLifeHubRequest
+        ? null
+        : await extractGoal(
+            cleanMessage
+          );
 
     /**
      * Generate Rae's response using:
@@ -181,34 +202,41 @@ export const chat = async (
     /**
      * Extract and save useful memories
      * in the background.
+     *
+     * Life Hub prompts contain generated task
+     * instructions and user-provided task details.
+     * Do not save the entire prompt as a personal
+     * memory through the ordinary chat pipeline.
      */
-    extractMemories(
-      cleanMessage
-    )
-      .then(
-        async (newMemories) => {
-          if (
-            !newMemories.length
-          ) {
-            return;
-          }
-
-          await saveMemories(
-            uid,
-            newMemories
-          );
-
-          console.log(
-            `Saved ${newMemories.length} Rae memory/memories for ${uid}`
-          );
-        }
+    if (!isLifeHubRequest) {
+      extractMemories(
+        cleanMessage
       )
-      .catch((error) => {
-        console.error(
-          "Background memory save error:",
-          error
-        );
-      });
+        .then(
+          async (newMemories) => {
+            if (
+              !newMemories.length
+            ) {
+              return;
+            }
+
+            await saveMemories(
+              uid,
+              newMemories
+            );
+
+            console.log(
+              `Saved ${newMemories.length} Rae memory/memories for ${uid}`
+            );
+          }
+        )
+        .catch((error) => {
+          console.error(
+            "Background memory save error:",
+            error
+          );
+        });
+    }
 
     /**
      * Save a clearly expressed
@@ -220,8 +248,15 @@ export const chat = async (
      *
      * createExtractedGoal() is expected
      * to handle duplicate protection.
+     *
+     * Life Hub tasks are excluded because
+     * generating a resource should not
+     * automatically create an accountability goal.
      */
-    if (goal) {
+    if (
+      !isLifeHubRequest &&
+      goal
+    ) {
       createExtractedGoal(
         uid,
         goal
