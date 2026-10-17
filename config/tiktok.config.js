@@ -65,8 +65,9 @@ export function getTikTokConfig() {
     |
     */
 
-    scopes: [
+  scopes: [
   "user.info.basic",
+  "video.upload",
 ],
   };
 }
