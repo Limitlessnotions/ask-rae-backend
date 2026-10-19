@@ -22,6 +22,7 @@ export async function generateResponse({
   wellness = {},
   accountabilityGoals = [],
   hydration = {},
+  conversationHistory = [],
 }) {
   const {
     name = "there",
@@ -550,12 +551,31 @@ Always make your responses feel premium, polished, feminine, motivational and ge
 `;
 
   try {
-    const response =
-      await ai.responses.create({
-        model: AI_MODEL,
-        instructions: systemPrompt,
-        input: message,
-      });
+    const input = [
+  ...conversationHistory
+    .filter(
+      (item) =>
+        (item.role === "user" ||
+          item.role === "assistant") &&
+        typeof item.content === "string" &&
+        item.content.trim()
+    )
+    .map((item) => ({
+      role: item.role,
+      content: item.content,
+    })),
+  {
+    role: "user",
+    content: message,
+  },
+];
+
+const response =
+  await ai.responses.create({
+    model: AI_MODEL,
+    instructions: systemPrompt,
+    input,
+  });
 
     const text =
       response.output_text?.trim();

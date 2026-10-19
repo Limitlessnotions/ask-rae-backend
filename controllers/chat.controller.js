@@ -21,21 +21,23 @@ import {
   createExtractedGoal,
 } from "../services/accountability.service.js";
 
-// Identifies Life Hub prompts created by the existing
-// frontend service without changing the /api/chat contract.
+import {
+  createConversation,
+  getConversationMessages,
+  saveConversationMessage,
+} from "../services/conversation.service.js";
+
 const LIFE_HUB_PROMPT_MARKER =
   "You are Rae, the AI assistant inside Ask Rae Life Hub.";
 
-export const chat = async (
-  req,
-  res
-) => {
+export const chat = async (req, res) => {
   try {
     const { uid } = req.user;
 
     const {
       message,
       hydration = {},
+      conversationId: requestedConversationId,
     } = req.body;
 
     if (
@@ -45,191 +47,181 @@ export const chat = async (
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Message is required.",
+        message: "Message is required.",
       });
     }
 
-    const cleanMessage =
-      message.trim();
+    if (
+      requestedConversationId !== undefined &&
+      requestedConversationId !== null &&
+      (typeof requestedConversationId !== "string" ||
+        !requestedConversationId.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid conversation ID.",
+      });
+    }
 
-    // Life Hub prompts contain task instructions generated
-    // by the existing Life Hub service. They should not be
-    // treated as ordinary chat messages for memory or goal
-    // extraction.
+    const cleanMessage = message.trim();
+
     const isLifeHubRequest =
-      cleanMessage.includes(
-        LIFE_HUB_PROMPT_MARKER
-      );
+      cleanMessage.includes(LIFE_HUB_PROMPT_MARKER);
 
-    /**
-     * Load user profile.
+    /*
+     * Load the existing conversation context for ordinary
+     * Rae chats. Conversation references are always scoped
+     * to the authenticated user's own Firestore path.
+     *
+     * Life Hub requests remain outside ordinary chat history.
      */
-    const profileDoc =
-      await db
-        .collection("users")
-        .doc(uid)
-        .get();
+    let conversation = null;
+    let conversationHistory = [];
 
-    const rawProfile =
-      profileDoc.exists
-        ? profileDoc.data()
-        : {};
+    if (!isLifeHubRequest) {
+      if (requestedConversationId) {
+        const conversationRef = db
+          .collection("users")
+          .doc(uid)
+          .collection("conversations")
+          .doc(requestedConversationId);
+
+        const conversationDoc = await conversationRef.get();
+
+        if (!conversationDoc.exists) {
+          return res.status(404).json({
+            success: false,
+            message: "Conversation not found.",
+          });
+        }
+
+        conversation = {
+          id: conversationDoc.id,
+          ...conversationDoc.data(),
+        };
+      } else {
+        conversation = await createConversation(
+          uid,
+          cleanMessage
+        );
+      }
+
+      conversationHistory = await getConversationMessages(
+        uid,
+        conversation.id,
+        30
+      );
+    }
+
+    /*
+     * Load the user's existing profile.
+     */
+    const profileDoc = await db
+      .collection("users")
+      .doc(uid)
+      .get();
+
+    const rawProfile = profileDoc.exists
+      ? profileDoc.data()
+      : {};
 
     const profile = {
-      name:
-        rawProfile.fullName ||
-        "",
-
-      businessName:
-        rawProfile.businessName ||
-        "",
-
-      businessType:
-        rawProfile.industry ||
-        "",
-
-      audience:
-        rawProfile.targetAudience ||
-        "",
-
-      tone:
-        rawProfile.preferredTone ||
-        "",
-
-      goals:
-        rawProfile.socialMediaGoals
-          ? [
-              rawProfile.socialMediaGoals,
-            ]
-          : [],
-
-      platforms:
-        Array.isArray(
-          rawProfile.platforms
-        )
-          ? rawProfile.platforms
-          : [],
+      name: rawProfile.fullName || "",
+      businessName: rawProfile.businessName || "",
+      businessType: rawProfile.industry || "",
+      audience: rawProfile.targetAudience || "",
+      tone: rawProfile.preferredTone || "",
+      goals: rawProfile.socialMediaGoals
+        ? [rawProfile.socialMediaGoals]
+        : [],
+      platforms: Array.isArray(rawProfile.platforms)
+        ? rawProfile.platforms
+        : [],
     };
 
-    /**
-     * Load Rae's memories.
+    const memories = await getMemories(uid);
+
+    const wellness = await getWellnessContext(uid);
+
+    const accountabilityGoals = await getActiveGoals(uid);
+
+    const goal = isLifeHubRequest
+      ? null
+      : await extractGoal(cleanMessage);
+
+    /*
+     * Generate Rae's response using both existing
+     * personalization context and this conversation's
+     * previous messages.
      */
-    const memories =
-      await getMemories(uid);
+    const reply = await generateResponse({
+      message: cleanMessage,
+      profile,
+      memories,
+      wellness,
+      accountabilityGoals,
+      hydration,
+      conversationHistory,
+    });
 
-    /**
-     * Load structured wellness
-     * context.
+    /*
+     * Persist the exchange for ordinary Rae chats.
+     * Use Firestore-generated document IDs to avoid
+     * collisions between independently generated messages.
      */
-    const wellness =
-      await getWellnessContext(uid);
+    if (conversation) {
+      await saveConversationMessage(
+        uid,
+        conversation.id,
+        {
+          id: db
+            .collection("_generated_message_ids")
+            .doc().id,
+          role: "user",
+          content: cleanMessage,
+        }
+      );
 
-    /**
-     * Load active accountability
-     * goals.
-     *
-     * These goals become part of Rae's
-     * context so she can naturally
-     * support the user's current
-     * priorities.
-     */
-    const accountabilityGoals =
-      await getActiveGoals(uid);
+      await saveConversationMessage(
+        uid,
+        conversation.id,
+        {
+          id: db
+            .collection("_generated_message_ids")
+            .doc().id,
+          role: "assistant",
+          content: reply,
+        }
+      );
+    }
 
-    /**
-     * Determine whether this message
-     * contains an actionable goal.
-     *
-     * This is deliberately conservative.
-     *
-     * Life Hub requests are excluded because
-     * their prompts describe tasks to perform,
-     * not necessarily goals the user wants tracked.
-     */
-    const goal =
-      isLifeHubRequest
-        ? null
-        : await extractGoal(
-            cleanMessage
-          );
-
-    /**
-     * Generate Rae's response using:
-     *
-     * - onboarding profile
-     * - memories
-     * - wellness profile
-     * - active accountability goals
-     * - current hydration context
-     */
-    const reply =
-      await generateResponse({
-        message:
-          cleanMessage,
-
-        profile,
-
-        memories,
-
-        wellness,
-
-        accountabilityGoals,
-
-        hydration,
-      });
-
-    /**
-     * Return both Rae's response and
-     * the detected accountability goal.
-     *
-     * askRae() expects this structure:
-     *
-     * {
-     *   reply: string,
-     *   goal: RaeGoal | null
-     * }
+    /*
+     * Keep the existing API response fields and add
+     * conversationId for the frontend integration.
      */
     res.json({
       success: true,
-
       reply,
-
-      goal:
-        goal || null,
+      goal: goal || null,
+      conversationId: conversation?.id || null,
     });
 
-    /**
-     * Extract and save useful memories
-     * in the background.
-     *
-     * Life Hub prompts contain generated task
-     * instructions and user-provided task details.
-     * Do not save the entire prompt as a personal
-     * memory through the ordinary chat pipeline.
+    /*
+     * Preserve existing background memory extraction.
      */
     if (!isLifeHubRequest) {
-      extractMemories(
-        cleanMessage
-      )
-        .then(
-          async (newMemories) => {
-            if (
-              !newMemories.length
-            ) {
-              return;
-            }
-
-            await saveMemories(
-              uid,
-              newMemories
-            );
-
-            console.log(
-              `Saved ${newMemories.length} Rae memory/memories for ${uid}`
-            );
+      extractMemories(cleanMessage)
+        .then(async (newMemories) => {
+          if (!newMemories.length) {
+            return;
           }
-        )
+
+          await saveMemories(uid, newMemories);
+
+          console.log(
+            `Saved ${newMemories.length} Rae memory/memories for ${uid}`
+          );
+        })
         .catch((error) => {
           console.error(
             "Background memory save error:",
@@ -238,29 +230,11 @@ export const chat = async (
         });
     }
 
-    /**
-     * Save a clearly expressed
-     * accountability goal.
-     *
-     * This happens after the response
-     * has been sent so goal persistence
-     * does not delay Rae's response.
-     *
-     * createExtractedGoal() is expected
-     * to handle duplicate protection.
-     *
-     * Life Hub tasks are excluded because
-     * generating a resource should not
-     * automatically create an accountability goal.
+    /*
+     * Preserve existing accountability goal creation.
      */
-    if (
-      !isLifeHubRequest &&
-      goal
-    ) {
-      createExtractedGoal(
-        uid,
-        goal
-      )
+    if (!isLifeHubRequest && goal) {
+      createExtractedGoal(uid, goal)
         .then((savedGoal) => {
           if (!savedGoal) {
             return;
@@ -278,17 +252,11 @@ export const chat = async (
         });
     }
   } catch (error) {
-    console.error(
-      "Chat Error:",
-      error
-    );
+    console.error("Chat Error:", error);
 
     return res.status(500).json({
       success: false,
-
-      message:
-        error?.message ||
-        "Unable to process message.",
+      message: "Unable to process message.",
     });
   }
 };

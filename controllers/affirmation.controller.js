@@ -439,10 +439,14 @@ export async function getUpcomingDailyAffirmations(
       });
     }
 
-    const startDate =
-      DateTime.now().setZone(
-        timezone
-      );
+    const now = DateTime.now().setZone(timezone);
+
+// Include today's 10 AM slot only if it is
+// still in the future. Otherwise start tomorrow.
+const startDate =
+  now.hour < 10
+    ? now.startOf("day")
+    : now.plus({ days: 1 }).startOf("day");
 
     const context =
       await getAffirmationContext(
