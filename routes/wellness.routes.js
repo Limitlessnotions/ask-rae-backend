@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import {
@@ -9,14 +10,12 @@ import {
   verifyUser,
 } from "../middleware/auth.middleware.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
 /**
  * GET /api/wellness
  *
- * Get the authenticated user's
- * wellness profile.
+ * Get the authenticated user's wellness profile.
  */
 router.get(
   "/",
@@ -27,10 +26,21 @@ router.get(
 /**
  * PATCH /api/wellness
  *
- * Update the authenticated user's
- * wellness profile.
+ * Update the authenticated user's wellness profile.
  */
 router.patch(
+  "/",
+  verifyUser,
+  updateMyWellness
+);
+
+/**
+ * PUT /api/wellness
+ *
+ * Backward compatibility for existing app versions
+ * that save wellness profiles using PUT.
+ */
+router.put(
   "/",
   verifyUser,
   updateMyWellness
