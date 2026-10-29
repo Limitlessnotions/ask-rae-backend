@@ -17,6 +17,10 @@ import {
   verifyUser,
 } from "../middleware/auth.middleware.js";
 
+import {
+  recordAffirmationMonitoringEvent,
+} from "../controllers/affirmationMonitoring.controller.js";
+
 const router = express.Router();
 
 /**
@@ -92,6 +96,16 @@ router.delete(
   "/user-schedule",
   verifyUser,
   cancelUserAffirmationSchedule
+);
+/**
+ * POST /api/affirmation/monitoring/events
+ *
+ * Record an authenticated affirmation monitoring event.
+ */
+router.post(
+  "/monitoring/events",
+  verifyUser,
+  recordAffirmationMonitoringEvent
 );
 
 export default router;
