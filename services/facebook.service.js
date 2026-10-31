@@ -1,19 +1,82 @@
+
 import axios from "axios";
 import crypto from "crypto";
-
 import { getFacebookConfig } from "../config/facebook.config.js";
 
 const GRAPH_URL = "https://graph.facebook.com/v23.0";
 
 /**
- * Generate a secure OAuth state token
+ * Centralized Facebook Graph API error logger.
+ * Never logs access tokens or application secrets.
+ */
+function logFacebookGraphError(error, context = {}) {
+  const responseData = error?.response?.data;
+  const graphError = responseData?.error;
+
+  console.error("\n=================================");
+  console.error("FACEBOOK GRAPH API ERROR");
+  console.error("=================================");
+
+  console.error("Operation:", context.operation ?? "Unknown");
+  console.error("Endpoint:", context.endpoint ?? "Unknown");
+  console.error("Page ID:", context.pageId ?? "Unknown");
+  console.error("Content type:", context.contentType ?? "Unknown");
+
+  console.error("HTTP Status:", error?.response?.status ?? "No response");
+  console.error("Axios Code:", error?.code ?? "Unknown");
+  console.error("Error Message:", error?.message ?? "Unknown");
+
+  if (graphError) {
+    console.error("Meta Error Details:", {
+      message: graphError.message,
+      type: graphError.type,
+      code: graphError.code,
+      error_subcode: graphError.error_subcode,
+      error_user_title: graphError.error_user_title,
+      error_user_msg: graphError.error_user_msg,
+      fbtrace_id: graphError.fbtrace_id,
+      is_transient: graphError.is_transient,
+    });
+  } else if (responseData) {
+    console.error("Response Data:", responseData);
+  } else {
+    console.error("Response Data: No response received from Meta.");
+  }
+
+  console.error("=================================\n");
+}
+
+/**
+ * Execute a Facebook Graph API request with detailed error logging.
+ */
+async function facebookRequest(
+  operation,
+  endpoint,
+  request,
+  context = {}
+) {
+  try {
+    return await request();
+  } catch (error) {
+    logFacebookGraphError(error, {
+      operation,
+      endpoint,
+      ...context,
+    });
+
+    throw error;
+  }
+}
+
+/**
+ * Generate a secure OAuth state token.
  */
 export function generateStateToken() {
   return crypto.randomUUID();
 }
 
 /**
- * Build Facebook Login for Business OAuth URL
+ * Build Facebook Login for Business OAuth URL.
  */
 export function getFacebookLoginUrl(state) {
   const FACEBOOK_CONFIG = getFacebookConfig();
@@ -23,33 +86,13 @@ export function getFacebookLoginUrl(state) {
   console.log("=================================");
 
   console.log("FACEBOOK_APP_ID:", FACEBOOK_CONFIG.appId);
-
   console.log(
     "FACEBOOK_APP_SECRET:",
-    FACEBOOK_CONFIG.appSecret ? "Loaded ✅" : "Missing ❌"
+    FACEBOOK_CONFIG.appSecret ? "Loaded" : "Missing"
   );
-
-  console.log(
-    "FACEBOOK_REDIRECT_URI:",
-    FACEBOOK_CONFIG.redirectUri
-  );
-
-  console.log(
-    "FACEBOOK_CONFIG_ID:",
-    FACEBOOK_CONFIG.configId
-  );
-
+  console.log("FACEBOOK_REDIRECT_URI:", FACEBOOK_CONFIG.redirectUri);
+  console.log("FACEBOOK_CONFIG_ID:", FACEBOOK_CONFIG.configId);
   console.log("STATE:", state);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Facebook Login for Business
-  |--------------------------------------------------------------------------
-  |
-  | Permissions are configured inside the Meta Business Login
-  | configuration.
-  |
-  */
 
   const params = new URLSearchParams({
     client_id: FACEBOOK_CONFIG.appId,
@@ -62,88 +105,82 @@ export function getFacebookLoginUrl(state) {
   const url =
     `https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`;
 
-  console.log("=================================");
-  console.log("Generated Facebook OAuth URL");
-  console.log("=================================");
-  console.log(url);
-  console.log("=================================");
+  console.log("Generated Facebook OAuth URL.");
 
   return url;
 }
 
 /**
- * Exchange authorization code for a user access token
+ * Exchange authorization code for a user access token.
  */
 export async function exchangeCodeForToken(code) {
   const FACEBOOK_CONFIG = getFacebookConfig();
 
-  const response = await axios.get(
-    `${GRAPH_URL}/oauth/access_token`,
-    {
-      params: {
-        client_id: FACEBOOK_CONFIG.appId,
-        client_secret: FACEBOOK_CONFIG.appSecret,
-        redirect_uri: FACEBOOK_CONFIG.redirectUri,
-        code,
-      },
+  return facebookRequest(
+    "Exchange OAuth Code",
+    "/oauth/access_token",
+    async () => {
+      const response = await axios.get(
+        `${GRAPH_URL}/oauth/access_token`,
+        {
+          params: {
+            client_id: FACEBOOK_CONFIG.appId,
+            client_secret: FACEBOOK_CONFIG.appSecret,
+            redirect_uri: FACEBOOK_CONFIG.redirectUri,
+            code,
+          },
+        }
+      );
+
+      return response.data;
     }
   );
-
-  return response.data;
 }
 
 /**
- * Generic GET helper for the Facebook Graph API
+ * Generic GET helper for the Facebook Graph API.
  */
-export async function graphGet(
-  endpoint,
-  accessToken,
-  params = {}
-) {
-  const response = await axios.get(
-    `${GRAPH_URL}${endpoint}`,
-    {
-      params: {
-        access_token: accessToken,
-        ...params,
-      },
+export async function graphGet(endpoint, accessToken, params = {}) {
+  return facebookRequest(
+    "Graph API GET",
+    endpoint,
+    async () => {
+      const response = await axios.get(
+        `${GRAPH_URL}${endpoint}`,
+        {
+          params: {
+            access_token: accessToken,
+            ...params,
+          },
+        }
+      );
+
+      return response.data;
     }
   );
-
-  return response.data;
 }
 
 /**
- * Get the authenticated Facebook user's profile
+ * Get authenticated Facebook user's profile.
  */
 export async function getFacebookProfile(accessToken) {
-  return await graphGet(
-    "/me",
-    accessToken,
-    {
-      fields: [
-        "id",
-        "name",
-        "email",
-        "picture.width(400).height(400)",
-      ].join(","),
-    }
-  );
+  return await graphGet("/me", accessToken, {
+    fields: [
+      "id",
+      "name",
+      "email",
+      "picture.width(400).height(400)",
+    ].join(","),
+  });
 }
 
 /**
- * Get all Facebook Pages managed by the
- * authenticated user.
+ * Get all Facebook Pages managed by authenticated user.
  */
 export async function getUserPages(accessToken) {
-  const data = await graphGet(
-    "/me/accounts",
-    accessToken,
-    {
-      fields:
-        "id,name,access_token,category,tasks,picture{url}",
-    }
-  );
+  const data = await graphGet("/me/accounts", accessToken, {
+    fields: "id,name,access_token,category,tasks,picture{url}",
+  });
 
   return data.data ?? [];
 }
@@ -171,43 +208,23 @@ function validateMediaUrl(url, mediaType) {
 }
 
 /**
- * Extract a media URL from the different payload
- * structures that Ask Rae may send.
- *
- * Supported examples:
- *
- * content.imageUrl
- * content.image_url
- * content.videoUrl
- * content.video_url
- * content.mediaUrl
- * content.media_url
- * content.url
- * content.media.url
- * content.media.uri
- * content.image.url
- * content.video.url
+ * Extract a media URL from supported payload structures.
  */
 function extractMediaUrl(content) {
-  if (!content) {
-    return null;
-  }
+  if (!content) return null;
 
   const nestedMedia =
-    content.media &&
-    typeof content.media === "object"
+    content.media && typeof content.media === "object"
       ? content.media
       : null;
 
   const nestedImage =
-    content.image &&
-    typeof content.image === "object"
+    content.image && typeof content.image === "object"
       ? content.image
       : null;
 
   const nestedVideo =
-    content.video &&
-    typeof content.video === "object"
+    content.video && typeof content.video === "object"
       ? content.video
       : null;
 
@@ -232,36 +249,27 @@ function extractMediaUrl(content) {
 }
 
 /**
- * Determine whether a media payload is an image or video.
+ * Determine whether media is an image or video.
  */
 function detectMediaKind(content) {
   const explicitType = String(
     content?.mediaType ??
-      content?.media_type ??
-      content?.media?.type ??
-      content?.media?.mediaType ??
-      content?.media?.media_type ??
-      content?.type ??
-      ""
+    content?.media_type ??
+    content?.media?.type ??
+    content?.media?.mediaType ??
+    content?.media?.media_type ??
+    content?.type ??
+    ""
   ).toLowerCase();
 
   if (
-    explicitType === "video" ||
-    explicitType === "reel" ||
-    explicitType === "reels" ||
-    explicitType === "mp4" ||
-    explicitType === "mov"
+    ["video", "reel", "reels", "mp4", "mov"].includes(explicitType)
   ) {
     return "video";
   }
 
   if (
-    explicitType === "photo" ||
-    explicitType === "image" ||
-    explicitType === "jpg" ||
-    explicitType === "jpeg" ||
-    explicitType === "png" ||
-    explicitType === "webp"
+    ["photo", "image", "jpg", "jpeg", "png", "webp"].includes(explicitType)
   ) {
     return "image";
   }
@@ -269,39 +277,22 @@ function detectMediaKind(content) {
   const url = extractMediaUrl(content);
 
   if (url) {
-    const cleanUrl = url
-      .split("?")[0]
-      .split("#")[0]
-      .toLowerCase();
+    const cleanUrl = url.split("?")[0].split("#")[0].toLowerCase();
 
-    if (
-      /\.(mp4|mov|m4v|avi|webm)(?:$)/i.test(cleanUrl)
-    ) {
+    if (/\.(mp4|mov|m4v|avi|webm)$/.test(cleanUrl)) {
       return "video";
     }
 
-    if (
-      /\.(jpg|jpeg|png|webp|gif)(?:$)/i.test(cleanUrl)
-    ) {
+    if (/\.(jpg|jpeg|png|webp|gif)$/.test(cleanUrl)) {
       return "image";
     }
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Default
-  |--------------------------------------------------------------------------
-  |
-  | Ask Rae's generic "media" payload is treated as an image
-  | unless there is evidence that it is a video.
-  |
-  */
 
   return "image";
 }
 
 /**
- * Publish a text post to a Facebook Page
+ * Publish a text post to a Facebook Page.
  */
 export async function publishPagePost(
   pageAccessToken,
@@ -309,36 +300,39 @@ export async function publishPagePost(
   message
 ) {
   if (!message || !message.trim()) {
-    throw new Error(
-      "Facebook text content is empty."
-    );
+    throw new Error("Facebook text content is empty.");
   }
 
-  console.log(
-    "Publishing Facebook text post..."
-  );
+  console.log("Publishing Facebook text post...");
 
-  const response = await axios.post(
-    `${GRAPH_URL}/${pageId}/feed`,
-    null,
+  return facebookRequest(
+    "Publish Text Post",
+    `/${pageId}/feed`,
+    async () => {
+      const response = await axios.post(
+        `${GRAPH_URL}/${pageId}/feed`,
+        null,
+        {
+          params: {
+            message: message.trim(),
+            access_token: pageAccessToken,
+          },
+        }
+      );
+
+      console.log("Facebook text post published:", response.data);
+
+      return response.data;
+    },
     {
-      params: {
-        message: message.trim(),
-        access_token: pageAccessToken,
-      },
+      pageId,
+      contentType: "text",
     }
   );
-
-  console.log(
-    "✅ Facebook text post published:",
-    response.data
-  );
-
-  return response.data;
 }
 
 /**
- * Publish a photo to a Facebook Page
+ * Publish a photo to a Facebook Page.
  */
 export async function publishPhoto(
   pageAccessToken,
@@ -346,43 +340,40 @@ export async function publishPhoto(
   imageUrl,
   caption = ""
 ) {
-  const validatedImageUrl =
-    validateMediaUrl(
-      imageUrl,
-      "photo"
-    );
+  const validatedImageUrl = validateMediaUrl(imageUrl, "photo");
 
-  console.log(
-    "Publishing Facebook photo..."
-  );
+  console.log("Publishing Facebook photo...");
+  console.log("Facebook image URL:", validatedImageUrl);
 
-  console.log(
-    "Facebook image URL:",
-    validatedImageUrl
-  );
+  return facebookRequest(
+    "Publish Photo",
+    `/${pageId}/photos`,
+    async () => {
+      const response = await axios.post(
+        `${GRAPH_URL}/${pageId}/photos`,
+        null,
+        {
+          params: {
+            url: validatedImageUrl,
+            caption: caption ?? "",
+            access_token: pageAccessToken,
+          },
+        }
+      );
 
-  const response = await axios.post(
-    `${GRAPH_URL}/${pageId}/photos`,
-    null,
+      console.log("Facebook photo published:", response.data);
+
+      return response.data;
+    },
     {
-      params: {
-        url: validatedImageUrl,
-        caption: caption ?? "",
-        access_token: pageAccessToken,
-      },
+      pageId,
+      contentType: "image",
     }
   );
-
-  console.log(
-    "✅ Facebook photo published:",
-    response.data
-  );
-
-  return response.data;
 }
 
 /**
- * Publish a video to a Facebook Page
+ * Publish a video to a Facebook Page.
  */
 export async function publishVideo(
   pageAccessToken,
@@ -390,96 +381,66 @@ export async function publishVideo(
   videoUrl,
   description = ""
 ) {
-  const validatedVideoUrl =
-    validateMediaUrl(
-      videoUrl,
-      "video"
-    );
+  const validatedVideoUrl = validateMediaUrl(videoUrl, "video");
 
-  console.log(
-    "Publishing Facebook video..."
-  );
+  console.log("Publishing Facebook video...");
+  console.log("Facebook video URL:", validatedVideoUrl);
 
-  console.log(
-    "Facebook video URL:",
-    validatedVideoUrl
-  );
+  return facebookRequest(
+    "Publish Video",
+    `/${pageId}/videos`,
+    async () => {
+      const response = await axios.post(
+        `${GRAPH_URL}/${pageId}/videos`,
+        null,
+        {
+          params: {
+            file_url: validatedVideoUrl,
+            description: description ?? "",
+            access_token: pageAccessToken,
+          },
+        }
+      );
 
-  const response = await axios.post(
-    `${GRAPH_URL}/${pageId}/videos`,
-    null,
+      console.log("Facebook video published:", response.data);
+
+      return response.data;
+    },
     {
-      params: {
-        file_url: validatedVideoUrl,
-        description: description ?? "",
-        access_token: pageAccessToken,
-      },
+      pageId,
+      contentType: "video",
     }
   );
-
-  console.log(
-    "✅ Facebook video published:",
-    response.data
-  );
-
-  return response.data;
 }
 
 /**
- * Universal Facebook Publisher
+ * Universal Facebook Publisher.
  *
- * Supported content types:
- *
- *   text
- *   photo
- *   image
- *   video
- *   reel
- *   media
- *
- * The "media" type is automatically detected
- * as image or video.
+ * Supported types:
+ * text, photo, image, video, reel, media.
  */
 export async function publishFacebookContent({
   accessToken,
   pageId,
   content,
 }) {
-  /*
-  |--------------------------------------------------------------------------
-  | Validate common inputs
-  |--------------------------------------------------------------------------
-  */
-
   if (!accessToken) {
-    throw new Error(
-      "Facebook access token is missing."
-    );
+    throw new Error("Facebook access token is missing.");
   }
 
   if (!pageId) {
-    throw new Error(
-      "Facebook Page ID is missing."
-    );
+    throw new Error("Facebook Page ID is missing.");
   }
 
   if (!content) {
-    throw new Error(
-      "Facebook content payload is missing."
-    );
+    throw new Error("Facebook content payload is missing.");
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Normalize content type
-  |--------------------------------------------------------------------------
-  */
 
   const contentType = String(
     content.type ??
-      content.mediaType ??
-      content.media_type ??
-      "text"
+    content.mediaType ??
+    content.media_type ??
+    "text"
   ).toLowerCase();
 
   console.log("=================================");
@@ -488,55 +449,20 @@ export async function publishFacebookContent({
   console.log("Page ID:", pageId);
   console.log("Content type:", contentType);
 
-  /*
-  |--------------------------------------------------------------------------
-  | Debug media payload
-  |--------------------------------------------------------------------------
-  */
-
   if (
-    contentType === "media" ||
-    contentType === "photo" ||
-    contentType === "image" ||
-    contentType === "video" ||
-    contentType === "reel"
+    ["media", "photo", "image", "video", "reel"].includes(contentType)
   ) {
-    console.log(
-      "Detected media URL:",
-      extractMediaUrl(content)
-    );
-
-    console.log(
-      "Detected media kind:",
-      detectMediaKind(content)
-    );
+    console.log("Detected media URL:", extractMediaUrl(content));
+    console.log("Detected media kind:", detectMediaKind(content));
   }
 
   console.log("=================================");
 
-  /*
-  |--------------------------------------------------------------------------
-  | TEXT
-  |--------------------------------------------------------------------------
-  */
-
   if (contentType === "text") {
-    /*
-    |--------------------------------------------------------------------------
-    | Important:
-    |
-    | If the frontend labels something as "text" but actually
-    | includes media, detect that here instead of blindly
-    | publishing it as a text-only post.
-    |--------------------------------------------------------------------------
-    */
-
-    const mediaUrl =
-      extractMediaUrl(content);
+    const mediaUrl = extractMediaUrl(content);
 
     if (mediaUrl) {
-      const mediaKind =
-        detectMediaKind(content);
+      const mediaKind = detectMediaKind(content);
 
       const caption =
         content.caption ??
@@ -545,14 +471,7 @@ export async function publishFacebookContent({
         content.body ??
         "";
 
-      console.log(
-        "Text payload contains media."
-      );
-
-      console.log(
-        "Detected media kind:",
-        mediaKind
-      );
+      console.log("Text payload contains media:", mediaKind);
 
       if (mediaKind === "video") {
         return await publishVideo(
@@ -578,27 +497,11 @@ export async function publishFacebookContent({
       content.body ??
       "";
 
-    return await publishPagePost(
-      accessToken,
-      pageId,
-      message
-    );
+    return await publishPagePost(accessToken, pageId, message);
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | MEDIA
-  |--------------------------------------------------------------------------
-  |
-  | Ask Rae currently sends "media" for media
-  | publishing. Determine whether it is an image
-  | or video automatically.
-  |--------------------------------------------------------------------------
-  */
-
   if (contentType === "media") {
-    const mediaUrl =
-      extractMediaUrl(content);
+    const mediaUrl = extractMediaUrl(content);
 
     if (!mediaUrl) {
       throw new Error(
@@ -606,8 +509,7 @@ export async function publishFacebookContent({
       );
     }
 
-    const mediaKind =
-      detectMediaKind(content);
+    const mediaKind = detectMediaKind(content);
 
     const caption =
       content.caption ??
@@ -617,15 +519,8 @@ export async function publishFacebookContent({
       content.body ??
       "";
 
-    console.log(
-      "Facebook media URL:",
-      mediaUrl
-    );
-
-    console.log(
-      "Facebook detected media kind:",
-      mediaKind
-    );
+    console.log("Facebook media URL:", mediaUrl);
+    console.log("Facebook detected media kind:", mediaKind);
 
     if (mediaKind === "video") {
       return await publishVideo(
@@ -644,18 +539,8 @@ export async function publishFacebookContent({
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | PHOTO / IMAGE
-  |--------------------------------------------------------------------------
-  */
-
-  if (
-    contentType === "photo" ||
-    contentType === "image"
-  ) {
-    const imageUrl =
-      extractMediaUrl(content);
+  if (contentType === "photo" || contentType === "image") {
+    const imageUrl = extractMediaUrl(content);
 
     const caption =
       content.caption ??
@@ -672,19 +557,12 @@ export async function publishFacebookContent({
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | VIDEO / REEL
-  |--------------------------------------------------------------------------
-  */
-
   if (
     contentType === "video" ||
     contentType === "reel" ||
     contentType === "reels"
   ) {
-    const videoUrl =
-      extractMediaUrl(content);
+    const videoUrl = extractMediaUrl(content);
 
     const description =
       content.description ??
@@ -701,12 +579,6 @@ export async function publishFacebookContent({
       description
     );
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | UNSUPPORTED
-  |--------------------------------------------------------------------------
-  */
 
   throw new Error(
     `Unsupported Facebook content type: ${content.type}`
