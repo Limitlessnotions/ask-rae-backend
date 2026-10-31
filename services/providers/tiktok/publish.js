@@ -516,13 +516,54 @@ export async function publish({
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Extract media URL
-  |--------------------------------------------------------------------------
-  */
+ /*
+|--------------------------------------------------------------------------
+| Extract media URL
+|--------------------------------------------------------------------------
+*/
 
-  const mediaUrl = extractMediaUrl(content);
+const mediaUrl = extractMediaUrl(content);
+
+if (!mediaUrl) {
+  throw new Error(
+    "TikTok draft upload requires a video or photo URL."
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Temporary proxy diagnostic
+|--------------------------------------------------------------------------
+*/
+
+const verifiedMediaUrl = toTikTokMediaUrl(mediaUrl);
+
+if (isPhoto(content, mediaUrl)) {
+  try {
+    const proxyCheck = await fetch(verifiedMediaUrl, {
+      method: "GET",
+      headers: {
+        Range: "bytes=0-1023",
+      },
+    });
+
+    console.log("TikTok photo proxy diagnostic:", {
+      status: proxyCheck.status,
+      contentType: proxyCheck.headers.get("content-type"),
+      contentLength: proxyCheck.headers.get("content-length"),
+      contentRange: proxyCheck.headers.get("content-range"),
+      finalUrlHost: new URL(proxyCheck.url).hostname,
+    });
+
+    await proxyCheck.body?.cancel();
+  } catch (error) {
+    console.error(
+      "TikTok photo proxy diagnostic failed:",
+      error.message
+    );
+  }
+}
+
 
   /*
   |--------------------------------------------------------------------------
