@@ -44,17 +44,22 @@ export async function connectAccount(code) {
     token.access_token
   );
 
-  console.log("✅ Profile loaded");
-  console.log(profile);
+  console.log("Facebook profile loaded:", {
+  id: profile.id,
+  name: profile.name,
+});
 
-  console.log("Step 3: Loading Facebook Pages...");
+const pages = await getUserPages(token.access_token);
 
-  const pages = await getUserPages(
-    token.access_token
-  );
-
-  console.log("✅ Pages loaded");
-  console.log(pages);
+console.log(
+  "Facebook Pages loaded:",
+  pages.map((page) => ({
+    id: page.id,
+    name: page.name,
+    tasks: page.tasks,
+    hasPageAccessToken: Boolean(page.access_token),
+  }))
+);
 
   console.log("Step 4: Normalizing account...");
 
