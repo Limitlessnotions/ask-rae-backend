@@ -1,51 +1,40 @@
 /*
 |--------------------------------------------------------------------------
-| TikTok Publisher
+| TikTok Publisher — Inbox Draft Upload
 |--------------------------------------------------------------------------
+| Uploads videos and photos to the creator's TikTok inbox as drafts.
+| The creator must open the TikTok inbox notification, finish editing,
+| and publish from the TikTok app.
 |
-| Publishes content directly to an authorized TikTok account using
-| TikTok's Content Posting API.
+| Required user-authorized scope: video.upload
 |
-| Supported:
-| - Video Direct Post using PULL_FROM_URL
-| - Photo Direct Post using PULL_FROM_URL
-|
+| Video: POST /v2/post/publish/inbox/video/init/
+| Photo: POST /v2/post/publish/content/init/ with MEDIA_UPLOAD
+|--------------------------------------------------------------------------
 */
 
-const TIKTOK_API_BASE =
-  "https://open.tiktokapis.com/v2";
+const TIKTOK_API_BASE = "https://open.tiktokapis.com/v2";
 
-const TIKTOK_MEDIA_PROXY_BASE_URL =
-  (
-    process.env.TIKTOK_MEDIA_PROXY_BASE_URL ||
-    "https://ask-rae.vercel.app/api/tiktok-media"
-  ).replace(/\/+$/, "");
+const TIKTOK_MEDIA_PROXY_BASE_URL = (
+  process.env.TIKTOK_MEDIA_PROXY_BASE_URL ||
+  "https://ask-rae.vercel.app/api/tiktok-media"
+).replace(/\/+$/, "");
 
-const CLOUDINARY_HOST =
-  "res.cloudinary.com";
-
-const CLOUDINARY_CLOUD_NAME =
-  "gmdcnulb";
+const CLOUDINARY_HOST = "res.cloudinary.com";
+const CLOUDINARY_CLOUD_NAME = "gmdcnulb";
 
 /**
- * Convert an Ask Rae media URL into a URL hosted
+ * Convert an Ask Rae Cloudinary media URL into a URL hosted
  * on the Ask Rae domain.
  *
- * TikTok requires PULL_FROM_URL media to belong to
- * a domain or URL prefix verified by the TikTok app.
- *
- * Cloudinary is therefore proxied through:
- *
- * https://ask-rae.vercel.app/api/tiktok-media/
+ * TikTok requires PULL_FROM_URL media to belong to a
+ * domain or URL prefix verified by the TikTok app.
  *
  * @param {string} mediaUrl
  * @returns {string}
  */
 function toTikTokMediaUrl(mediaUrl) {
-  if (
-    typeof mediaUrl !== "string" ||
-    !mediaUrl.trim()
-  ) {
+  if (typeof mediaUrl !== "string" || !mediaUrl.trim()) {
     return mediaUrl;
   }
 
@@ -57,47 +46,29 @@ function toTikTokMediaUrl(mediaUrl) {
     return mediaUrl;
   }
 
-  /*
-   * Only transform Cloudinary URLs belonging
-   * to Ask Rae's configured Cloudinary account.
-   */
-  if (
-    parsedUrl.hostname !== CLOUDINARY_HOST
-  ) {
+  // Only transform Cloudinary URLs.
+  if (parsedUrl.hostname !== CLOUDINARY_HOST) {
     return mediaUrl;
   }
 
-  const expectedPrefix =
-    `/${CLOUDINARY_CLOUD_NAME}/`;
+  const expectedPrefix = `/${CLOUDINARY_CLOUD_NAME}/`;
 
-  if (
-    !parsedUrl.pathname.startsWith(
-      expectedPrefix
-    )
-  ) {
+  if (!parsedUrl.pathname.startsWith(expectedPrefix)) {
     return mediaUrl;
   }
 
-  const cloudinaryPath =
-    parsedUrl.pathname.slice(
-      expectedPrefix.length
-    );
-
-  if (
-    !cloudinaryPath.startsWith(
-      "video/upload/"
-    ) &&
-    !cloudinaryPath.startsWith(
-      "image/upload/"
-    )
-  ) {
-    return mediaUrl;
-  }
-
-  return (
-    `${TIKTOK_MEDIA_PROXY_BASE_URL}/` +
-    cloudinaryPath
+  const cloudinaryPath = parsedUrl.pathname.slice(
+    expectedPrefix.length
   );
+
+  if (
+    !cloudinaryPath.startsWith("video/upload/") &&
+    !cloudinaryPath.startsWith("image/upload/")
+  ) {
+    return mediaUrl;
+  }
+
+  return `${TIKTOK_MEDIA_PROXY_BASE_URL}/${cloudinaryPath}`;
 }
 
 /**
@@ -120,9 +91,7 @@ async function tiktokRequest(
 
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type":
-          "application/json; charset=UTF-8",
-
+        "Content-Type": "application/json; charset=UTF-8",
         ...(options.headers || {}),
       },
     }
@@ -137,12 +106,11 @@ async function tiktokRequest(
   }
 
   if (!response.ok) {
-    const message =
+    const error = new Error(
       data?.error?.message ||
       data?.message ||
-      `TikTok API request failed with status ${response.status}.`;
-
-    const error = new Error(message);
+      `TikTok API request failed with status ${response.status}.`
+    );
 
     error.status = response.status;
     error.code = data?.error?.code;
@@ -153,13 +121,12 @@ async function tiktokRequest(
   }
 
   if (
-    data?.error &&
-    data.error.code &&
+    data?.error?.code &&
     data.error.code !== "ok"
   ) {
     const error = new Error(
       data.error.message ||
-        `TikTok API error: ${data.error.code}`
+      `TikTok API error: ${data.error.code}`
     );
 
     error.code = data.error.code;
@@ -175,9 +142,8 @@ async function tiktokRequest(
 /**
  * Extract a media URL from the Ask Rae content object.
  *
- * The existing publishing system may provide media in
- * different shapes, so we intentionally support the common
- * structures already used by the other social publishers.
+ * Supports the common media structures used by the
+ * social publishing system.
  *
  * @param {Object} content
  * @returns {string|null}
@@ -218,7 +184,7 @@ function extractMediaUrl(content) {
 
   return (
     candidates.find(
-      (value) =>
+      value =>
         typeof value === "string" &&
         value.trim().length > 0
     ) || null
@@ -236,288 +202,290 @@ function extractCaption(content) {
     return "";
   }
 
-  const caption =
+  return String(
     content.caption ??
     content.text ??
     content.message ??
     content.description ??
     content.title ??
-    "";
+    ""
+  ).trim();
+}
 
-  return String(caption).trim();
+/**
+ * Determine the supplied content type.
+ *
+ * @param {Object} content
+ * @returns {string}
+ */
+function getContentType(content) {
+  return String(
+    content?.type ??
+    content?.mediaType ??
+    content?.media?.type ??
+    content?.image?.type ??
+    content?.video?.type ??
+    ""
+  ).toLowerCase();
 }
 
 /**
  * Determine whether the supplied content is a photo.
  *
+ * Detection uses content type, MIME type, file extension,
+ * and Cloudinary image URL paths.
+ *
+ * @param {Object} content
+ * @param {string} mediaUrl
+ * @returns {boolean}
+ */
+function isPhoto(content, mediaUrl) {
+  const type = getContentType(content);
+
+  if (
+    ["photo", "image", "picture"].includes(type)
+  ) {
+    return true;
+  }
+
+  const mimeType = String(
+    content?.mimeType ??
+    content?.mime_type ??
+    content?.media?.mimeType ??
+    content?.media?.mime_type ??
+    content?.image?.mimeType ??
+    ""
+  ).toLowerCase();
+
+  if (mimeType.startsWith("image/")) {
+    return true;
+  }
+
+  if (mediaUrl) {
+    try {
+      const pathname = new URL(mediaUrl)
+        .pathname
+        .toLowerCase();
+
+      if (
+        /\.(jpg|jpeg|png|webp|heic|heif)$/i.test(pathname)
+      ) {
+        return true;
+      }
+
+      if (pathname.includes("/image/upload/")) {
+        return true;
+      }
+    } catch {
+      // Use the content metadata/default classification.
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Determine whether the content is AI-generated.
+ *
  * @param {Object} content
  * @returns {boolean}
  */
-function isPhoto(content) {
-  const type = String(
-    content?.type ??
-      content?.mediaType ??
-      content?.media?.type ??
-      ""
-  ).toLowerCase();
-
-  return (
-    type === "photo" ||
-    type === "image" ||
-    type === "picture"
+function getAigcFlag(content) {
+  return Boolean(
+    content?.isAigc ??
+    content?.is_aigc ??
+    false
   );
 }
 
 /**
- * Query the currently authorized TikTok creator.
+ * Upload a video to the TikTok creator's inbox.
  *
- * TikTok requires creator information before Direct Post.
+ * This does NOT publish the video directly.
+ * The creator must complete publishing inside TikTok.
  *
- * @param {string} accessToken
+ * Uses:
+ * POST /v2/post/publish/inbox/video/init/
+ *
+ * Required scope:
+ * video.upload
+ *
+ * @param {Object} params
+ * @param {string} params.accessToken
+ * @param {string} params.mediaUrl
  * @returns {Promise<Object>}
  */
-async function queryCreatorInfo(accessToken) {
-  return await tiktokRequest(
-    "/post/publish/creator_info/query/",
+async function uploadVideoDraft({
+  accessToken,
+  mediaUrl,
+}) {
+  const verifiedMediaUrl = toTikTokMediaUrl(mediaUrl);
+
+  console.log(
+    "TikTok draft video URL prepared."
+  );
+
+  console.log(
+    "TikTok media URL uses Ask Rae proxy:",
+    verifiedMediaUrl !== mediaUrl
+  );
+
+  const response = await tiktokRequest(
+    "/post/publish/inbox/video/init/",
     accessToken,
     {
       method: "POST",
-      body: JSON.stringify({}),
+
+      body: JSON.stringify({
+        source_info: {
+          source: "PULL_FROM_URL",
+          video_url: verifiedMediaUrl,
+        },
+      }),
     }
   );
-}
 
-/**
- * Publish a video directly to TikTok.
- *
- * @param {string} accessToken
- * @param {Object} content
- * @returns {Promise<Object>}
- */
-async function publishVideo({
-  accessToken,
-  content,
-  creatorInfo,
-}) {
-  const originalMediaUrl =
-    extractMediaUrl(content);
+  const publishId = response?.data?.publish_id;
 
-  if (!originalMediaUrl) {
+  if (!publishId) {
     throw new Error(
-      "TikTok video URL is missing."
+      "TikTok returned no video draft upload ID."
     );
   }
-
-  const mediaUrl =
-    toTikTokMediaUrl(
-      originalMediaUrl
-    );
-
-  console.log(
-    "TikTok original media URL:",
-    originalMediaUrl
-  );
-
-  console.log(
-    "TikTok verified media URL:",
-    mediaUrl
-  );
-
-  const caption =
-    extractCaption(content);
-
-  const privacyOptions =
-    creatorInfo?.data?.privacy_level_options ||
-    [];
-
-  /*
-  |--------------------------------------------------------------------------
-  | For Sandbox / unaudited clients
-  |--------------------------------------------------------------------------
-  |
-  | SELF_ONLY is the safest privacy level because TikTok restricts
-  | unaudited Direct Posts to private viewing.
-  |
-  */
-
-  const privacyLevel =
-    privacyOptions.includes("SELF_ONLY")
-      ? "SELF_ONLY"
-      : privacyOptions[0];
-
-  if (!privacyLevel) {
-    throw new Error(
-      "TikTok did not return any available privacy levels."
-    );
-  }
-
-  const response =
-    await tiktokRequest(
-      "/post/publish/video/init/",
-      accessToken,
-      {
-        method: "POST",
-
-        body: JSON.stringify({
-          post_info: {
-            title: caption,
-
-            privacy_level:
-              privacyLevel,
-
-            disable_duet: false,
-            disable_comment: false,
-            disable_stitch: false,
-
-            /*
-             * Ask Rae can generate AI content.
-             * This can be overridden by the content payload.
-             */
-            is_aigc:
-              content?.isAigc ??
-              content?.is_aigc ??
-              false,
-          },
-
-          source_info: {
-            source: "PULL_FROM_URL",
-            video_url: mediaUrl,
-          },
-        }),
-      }
-    );
 
   return {
     platform: "tiktok",
 
     mediaType: "video",
 
-    publishId:
-      response?.data?.publish_id ?? null,
+    workflow: "draft_upload",
+
+    publishId,
 
     status: "processing",
+
+    userActionRequired: true,
+
+    nextStep:
+      "Open the TikTok inbox notification to edit and publish the video.",
 
     raw: response,
   };
 }
 
 /**
- * Publish a photo directly to TikTok.
+ * Upload a photo to the TikTok creator's inbox.
  *
- * @param {string} accessToken
- * @param {Object} content
- * @param {Object} creatorInfo
+ * This uses MEDIA_UPLOAD, not DIRECT_POST.
+ * The creator must complete publishing inside TikTok.
+ *
+ * Uses:
+ * POST /v2/post/publish/content/init/
+ *
+ * Required scope:
+ * video.upload
+ *
+ * @param {Object} params
+ * @param {string} params.accessToken
+ * @param {Object} params.content
+ * @param {string} params.mediaUrl
  * @returns {Promise<Object>}
  */
-async function publishPhoto({
+async function uploadPhotoDraft({
   accessToken,
   content,
-  creatorInfo,
+  mediaUrl,
 }) {
-  const originalMediaUrl =
-    extractMediaUrl(content);
+  const verifiedMediaUrl = toTikTokMediaUrl(mediaUrl);
 
-  if (!originalMediaUrl) {
-    throw new Error(
-      "TikTok photo URL is missing."
-    );
+  const caption = extractCaption(content);
+
+  const postInfo = {};
+
+  if (caption) {
+    postInfo.title = caption.slice(0, 90);
+    postInfo.description = caption.slice(0, 4000);
   }
 
-  const mediaUrl =
-    toTikTokMediaUrl(
-      originalMediaUrl
-    );
-
   console.log(
-    "TikTok original media URL:",
-    originalMediaUrl
+    "TikTok draft photo URL prepared."
   );
 
   console.log(
-    "TikTok verified media URL:",
-    mediaUrl
+    "TikTok media URL uses Ask Rae proxy:",
+    verifiedMediaUrl !== mediaUrl
   );
 
-  const caption =
-    extractCaption(content);
+  const response = await tiktokRequest(
+    "/post/publish/content/init/",
+    accessToken,
+    {
+      method: "POST",
 
-  const privacyOptions =
-    creatorInfo?.data?.privacy_level_options ||
-    [];
+      body: JSON.stringify({
+        post_info: postInfo,
 
-  const privacyLevel =
-    privacyOptions.includes("SELF_ONLY")
-      ? "SELF_ONLY"
-      : privacyOptions[0];
+        source_info: {
+          source: "PULL_FROM_URL",
 
-  if (!privacyLevel) {
+          photo_cover_index: 0,
+
+          photo_images: [
+            verifiedMediaUrl,
+          ],
+        },
+
+        post_mode: "MEDIA_UPLOAD",
+
+        media_type: "PHOTO",
+
+        is_aigc: getAigcFlag(content),
+      }),
+    }
+  );
+
+  const publishId = response?.data?.publish_id;
+
+  if (!publishId) {
     throw new Error(
-      "TikTok did not return any available privacy levels."
+      "TikTok returned no photo draft upload ID."
     );
   }
-
-  const response =
-    await tiktokRequest(
-      "/post/publish/content/init/",
-      accessToken,
-      {
-        method: "POST",
-
-        body: JSON.stringify({
-          post_info: {
-            title: caption,
-
-            description: caption,
-
-            privacy_level:
-              privacyLevel,
-
-            disable_comment: false,
-          },
-
-          source_info: {
-            source: "PULL_FROM_URL",
-
-            photo_cover_index: 0,
-
-            photo_images: [
-              mediaUrl,
-            ],
-          },
-
-          post_mode: "DIRECT_POST",
-
-          media_type: "PHOTO",
-
-          is_aigc:
-            content?.isAigc ??
-            content?.is_aigc ??
-            false,
-        }),
-      }
-    );
 
   return {
     platform: "tiktok",
 
     mediaType: "photo",
 
-    publishId:
-      response?.data?.publish_id ?? null,
+    workflow: "draft_upload",
+
+    publishId,
 
     status: "processing",
+
+    userActionRequired: true,
+
+    nextStep:
+      "Open the TikTok inbox notification to edit and publish the photo post.",
 
     raw: response,
   };
 }
 
 /**
- * Publish content to TikTok.
+ * Main TikTok publishing function.
+ *
+ * Important:
+ * - Does not call creator_info/query.
+ * - Does not use Direct Post.
+ * - Does not require video.publish.
+ * - Uploads media to the TikTok inbox as a draft.
  *
  * @param {Object} params
  * @param {string} params.accessToken
  * @param {string} params.targetId
  * @param {Object} params.content
+ * @returns {Promise<Object>}
  */
 export async function publish({
   accessToken,
@@ -538,12 +506,8 @@ export async function publish({
 
   /*
   |--------------------------------------------------------------------------
-  | Validate target
+  | Validate content
   |--------------------------------------------------------------------------
-  |
-  | TikTok identifies the authorized creator through the access token.
-  | targetId is therefore not required for the TikTok API request itself.
-  |
   */
 
   if (!content) {
@@ -551,6 +515,14 @@ export async function publish({
       "Content payload is missing."
     );
   }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Extract media URL
+  |--------------------------------------------------------------------------
+  */
+
+  const mediaUrl = extractMediaUrl(content);
 
   /*
   |--------------------------------------------------------------------------
@@ -563,7 +535,7 @@ export async function publish({
   );
 
   console.log(
-    "TIKTOK PUBLISHER"
+    "TIKTOK DRAFT UPLOADER"
   );
 
   console.log(
@@ -577,39 +549,29 @@ export async function publish({
 
   console.log(
     "Content type:",
-    content.type ??
-      content.mediaType ??
-      "unknown"
+    getContentType(content) || "unknown"
   );
 
   console.log(
     "Media URL:",
-    extractMediaUrl(content)
-      ? "present"
-      : "missing"
+    mediaUrl ? "present" : "missing"
   );
 
   /*
   |--------------------------------------------------------------------------
-  | Query creator information
+  | Validate media
   |--------------------------------------------------------------------------
+  |
+  | TikTok's inbox draft upload workflow requires a video
+  | or photo. Text-only posts are not supported here.
+  |
   */
 
-  console.log(
-    "Querying TikTok creator information..."
-  );
-
-  const creatorInfo =
-    await queryCreatorInfo(
-      accessToken
+  if (!mediaUrl) {
+    throw new Error(
+      "TikTok draft upload requires a video or photo URL. Text-only posts cannot be uploaded through this workflow."
     );
-
-  console.log(
-    "TikTok creator:",
-    creatorInfo?.data?.creator_username ??
-      creatorInfo?.data?.creator_nickname ??
-      "unknown"
-  );
+  }
 
   /*
   |--------------------------------------------------------------------------
@@ -617,25 +579,28 @@ export async function publish({
   |--------------------------------------------------------------------------
   */
 
-  if (isPhoto(content)) {
+  if (isPhoto(content, mediaUrl)) {
     console.log(
-      "Publishing TikTok photo..."
+      "Uploading TikTok photo as an inbox draft..."
     );
 
-    const result =
-      await publishPhoto({
-        accessToken,
-        content,
-        creatorInfo,
-      });
+    const result = await uploadPhotoDraft({
+      accessToken,
+      content,
+      mediaUrl,
+    });
 
     console.log(
-      "✅ TikTok photo publishing initialized"
+      "TikTok photo draft upload initialized."
     );
 
     console.log(
       "Publish ID:",
       result.publishId
+    );
+
+    console.log(
+      "Creator must finish publishing inside TikTok."
     );
 
     console.log(
@@ -652,23 +617,25 @@ export async function publish({
   */
 
   console.log(
-    "Publishing TikTok video..."
+    "Uploading TikTok video as an inbox draft..."
   );
 
-  const result =
-    await publishVideo({
-      accessToken,
-      content,
-      creatorInfo,
-    });
+  const result = await uploadVideoDraft({
+    accessToken,
+    mediaUrl,
+  });
 
   console.log(
-    "✅ TikTok video publishing initialized"
+    "TikTok video draft upload initialized."
   );
 
   console.log(
     "Publish ID:",
     result.publishId
+  );
+
+  console.log(
+    "Creator must finish publishing inside TikTok."
   );
 
   console.log(
