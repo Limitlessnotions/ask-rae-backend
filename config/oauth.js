@@ -9,11 +9,5 @@ export const OAUTH_CONFIG = {
     tokenUrl: "https://graph.facebook.com/v23.0/oauth/access_token",
   },
 
-  linkedin: {},
 
-  pinterest: {},
-
-  youtube: {},
-
-  x: {},
 };

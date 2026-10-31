@@ -2,10 +2,7 @@ export const SOCIAL_PLATFORMS = {
   FACEBOOK: "facebook",
   INSTAGRAM: "instagram",
   TIKTOK: "tiktok",
-  LINKEDIN: "linkedin",
-  PINTEREST: "pinterest",
-  YOUTUBE: "youtube",
-  X: "x",
+  
 };
 
 export const PLATFORM_CONFIG = {
@@ -30,31 +27,4 @@ export const PLATFORM_CONFIG = {
     supportsVideos: true,
   },
 
-  linkedin: {
-    name: "LinkedIn",
-    supportsPublishing: true,
-    supportsImages: true,
-    supportsVideos: true,
-  },
-
-  pinterest: {
-    name: "Pinterest",
-    supportsPublishing: true,
-    supportsImages: true,
-    supportsVideos: true,
-  },
-
-  youtube: {
-    name: "YouTube",
-    supportsPublishing: true,
-    supportsImages: false,
-    supportsVideos: true,
-  },
-
-  x: {
-    name: "X",
-    supportsPublishing: true,
-    supportsImages: true,
-    supportsVideos: true,
-  },
 };

@@ -1,3 +1,4 @@
+
 import { generateState } from "./oauth.state.js";
 import { generatePKCE } from "./oauth.pkce.js";
 
@@ -12,27 +13,52 @@ import providers from "../providers/index.js";
 
 import {
   saveSocialAccount,
+  deleteSocialAccount,
 } from "../socialAccount.service.js";
 
 /**
  * --------------------------------------------------------------------------
  * Create OAuth Connection
  * --------------------------------------------------------------------------
+ *
+ * replaceExisting:
+ * - false: start a normal OAuth connection.
+ * - true: remove the existing Ask Rae connection before starting OAuth.
+ *
+ * This only removes Ask Rae's stored credentials. It does not, by itself,
+ * revoke authorization from the external social platform.
  */
 export async function createConnection({
   uid,
   platform,
+  replaceExisting = false,
 }) {
-  const config = PROVIDERS[platform];
-
-  if (!config) {
-    throw new Error(`Unsupported provider: ${platform}`);
+  if (!uid) {
+    throw new Error("User ID is required to create an OAuth connection.");
   }
 
-  const provider = providers[platform];
+  if (!platform) {
+    throw new Error("OAuth platform is required.");
+  }
+
+  const normalizedPlatform = platform.toLowerCase();
+  const config = PROVIDERS[normalizedPlatform];
+
+  if (!config) {
+    throw new Error(`Unsupported provider: ${normalizedPlatform}`);
+  }
+
+  const provider = providers[normalizedPlatform];
 
   if (!provider) {
-    throw new Error(`Provider '${platform}' is not registered.`);
+    throw new Error(
+      `Provider '${normalizedPlatform}' is not registered.`
+    );
+  }
+
+  // Remove the old local connection before beginning a fresh authorization.
+  if (replaceExisting) {
+    await deleteSocialAccount(uid, normalizedPlatform);
   }
 
   const state = generateState();
@@ -45,21 +71,33 @@ export async function createConnection({
 
   await saveOAuthSession({
     uid,
-    platform,
+    platform: normalizedPlatform,
     state,
     codeVerifier: pkce?.codeVerifier ?? null,
   });
 
-  const authorizationUrl =
-    provider.oauth.buildAuthorizationUrl({
-      state,
-      codeChallenge: pkce?.codeChallenge,
-      codeChallengeMethod: pkce?.codeChallengeMethod,
-    });
+  try {
+    const authorizationUrl =
+      await provider.oauth.buildAuthorizationUrl({
+        state,
+        codeChallenge: pkce?.codeChallenge,
+        codeChallengeMethod: pkce?.codeChallengeMethod,
+      });
 
-  return {
-    authorizationUrl,
-  };
+    if (!authorizationUrl) {
+      throw new Error(
+        `Unable to generate ${normalizedPlatform} authorization URL.`
+      );
+    }
+
+    return {
+      authorizationUrl,
+    };
+  } catch (error) {
+    // Avoid leaving an unusable OAuth session behind.
+    await deleteOAuthSession(state);
+    throw error;
+  }
 }
 
 /**
@@ -71,7 +109,16 @@ export async function handleCallback({
   platform,
   query,
 }) {
-  const { code, state } = query;
+  const normalizedPlatform = platform?.toLowerCase();
+  const { code, state, error, error_description: errorDescription } =
+    query ?? {};
+
+  if (error) {
+    throw new Error(
+      errorDescription ||
+        `OAuth authorization was declined or failed: ${error}`
+    );
+  }
 
   if (!code) {
     throw new Error("Authorization code missing.");
@@ -84,42 +131,54 @@ export async function handleCallback({
   const session = await getOAuthSession(state);
 
   if (!session) {
-    throw new Error("OAuth session not found.");
+    throw new Error("OAuth session not found or expired.");
   }
 
-  const provider = providers[platform];
+  if (!session.uid) {
+    await deleteOAuthSession(state);
+    throw new Error("OAuth session does not contain a user ID.");
+  }
+
+  if (
+    !session.platform ||
+    session.platform !== normalizedPlatform
+  ) {
+    await deleteOAuthSession(state);
+    throw new Error("OAuth platform mismatch.");
+  }
+
+  const provider = providers[normalizedPlatform];
 
   if (!provider) {
-    throw new Error(`Unsupported provider: ${platform}`);
+    await deleteOAuthSession(state);
+    throw new Error(`Unsupported provider: ${normalizedPlatform}`);
   }
 
- const account =
-  await provider.oauth.connectAccount(
-    code,
-    session
-  );
+  try {
+    const account = await provider.oauth.connectAccount(
+      code,
+      session
+    );
 
-  console.log("Step 5: Saving social account...");
+    if (!account || typeof account !== "object") {
+      throw new Error(
+        `${normalizedPlatform} did not return a valid account.`
+      );
+    }
 
-await saveSocialAccount({
-  uid: session.uid,
-  platform,
-  account,
-});
+    await saveSocialAccount({
+      uid: session.uid,
+      platform: normalizedPlatform,
+      account,
+    });
 
-console.log("✅ Social account saved");
-
-console.log("Step 6: Deleting OAuth session...");
-
-await deleteOAuthSession(state);
-
-console.log("✅ OAuth session deleted");
-
-console.log("Step 7: OAuth completed successfully");
-
-return {
-  success: true,
-  account,
-};
-
+    return {
+      success: true,
+      platform: normalizedPlatform,
+      account,
+    };
+  } finally {
+    // A callback state must not be reusable, including after provider errors.
+    await deleteOAuthSession(state);
+  }
 }

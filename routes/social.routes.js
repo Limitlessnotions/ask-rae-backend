@@ -1,4 +1,6 @@
+
 import express from "express";
+
 import { verifyUser } from "../middleware/auth.middleware.js";
 
 import {
@@ -8,40 +10,33 @@ import {
 
 import {
   getAccounts,
+  disconnectSocialAccount,
 } from "../controllers/socialAccount.controller.js";
 
 const router = express.Router();
 
-/*
-|--------------------------------------------------------------------------
-| Connected Social Accounts
-|--------------------------------------------------------------------------
-*/
-
+// Get connected social accounts
 router.get(
   "/accounts",
   verifyUser,
   getAccounts
 );
 
-/*
-|--------------------------------------------------------------------------
-| Facebook
-|--------------------------------------------------------------------------
-*/
+// Disconnect a social account
+router.delete(
+  "/accounts/:platform",
+  verifyUser,
+  disconnectSocialAccount
+);
 
+// Get Facebook Pages
 router.get(
   "/facebook/pages",
   verifyUser,
   getFacebookPages
 );
 
-/*
-|--------------------------------------------------------------------------
-| Universal Publisher
-|--------------------------------------------------------------------------
-*/
-
+// Publish social content
 router.post(
   "/publish",
   verifyUser,
